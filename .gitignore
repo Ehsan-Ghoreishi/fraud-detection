@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+# regenerate locally with: python src/generate_data.py
+data/transactions.csv

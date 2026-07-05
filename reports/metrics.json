@@ -1,0 +1,73 @@
+{
+  "models": {
+    "logistic_regression": {
+      "roc_auc": 0.9998,
+      "pr_auc": 0.9904
+    },
+    "random_forest": {
+      "roc_auc": 0.9994,
+      "pr_auc": 0.9815
+    }
+  },
+  "best_model": "logistic_regression",
+  "cost_optimal_threshold": 0.65,
+  "recall_fraud": 0.988,
+  "precision_fraud": 0.778,
+  "flagged_rate": 0.022,
+  "confusion_matrix": {
+    "tn": 14673,
+    "fp": 72,
+    "fn": 3,
+    "tp": 252
+  },
+  "feature_importance": [
+    {
+      "feature": "merchant_risk",
+      "importance": 0.223
+    },
+    {
+      "feature": "distance_from_home",
+      "importance": 0.175
+    },
+    {
+      "feature": "txn_count_1h",
+      "importance": 0.0386
+    },
+    {
+      "feature": "is_night",
+      "importance": 0.0231
+    },
+    {
+      "feature": "foreign_country",
+      "importance": 0.0173
+    },
+    {
+      "feature": "log_amount",
+      "importance": 0.0091
+    },
+    {
+      "feature": "hour",
+      "importance": 0.0068
+    },
+    {
+      "feature": "days_since_last_txn",
+      "importance": 0.0047
+    },
+    {
+      "feature": "geo_risk",
+      "importance": 0.0035
+    },
+    {
+      "feature": "new_device",
+      "importance": 0.0034
+    },
+    {
+      "feature": "device_geo_amount_risk",
+      "importance": 0.0001
+    },
+    {
+      "feature": "high_velocity",
+      "importance": 0.0
+    }
+  ]
+}
