@@ -30,6 +30,7 @@ import pandas as pd
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import (
     average_precision_score,
+    brier_score_loss,
     classification_report,
     confusion_matrix,
     roc_auc_score,
@@ -110,6 +111,9 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     results[best_name]["test_roc_auc"] = round(roc_auc_score(y_test, best_proba), 4)
     results[best_name]["test_pr_auc"] = round(
         average_precision_score(y_test, best_proba), 4)
+    # class weighting inflates probabilities; track how far they drift
+    results[best_name]["test_brier"] = round(
+        brier_score_loss(y_test, best_proba), 5)
 
     log.info(f"\nBest model by PR-AUC: {best_name}\n")
 

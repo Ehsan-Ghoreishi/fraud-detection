@@ -66,6 +66,6 @@ def test_cli_end_to_end(tmp_path):
          "--model", str(model)])
     assert {p.name for p in reports.iterdir()} == {
         "metrics.json", "pr_curve.png", "confusion_matrix.png",
-        "cost_curve.png", "feature_importance.png",
+        "cost_curve.png", "feature_importance.png", "calibration.png",
     }
     assert (tmp_path / "s.csv").stat().st_size > 0

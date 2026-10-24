@@ -13,6 +13,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
+from sklearn.calibration import calibration_curve
 from sklearn.metrics import (
     average_precision_score,
     confusion_matrix,
@@ -52,6 +53,7 @@ def make_all(out: dict, reports_dir: Path = REPORTS) -> None:
                     reports_dir / "cost_curve.png")
     plot_feature_importance(summary.get("feature_importance", []),
                             reports_dir / "feature_importance.png")
+    plot_calibration(out["y_test"], out["proba"], reports_dir / "calibration.png")
 
 
 def main():
@@ -135,6 +137,25 @@ def plot_feature_importance(feature_importance: list[dict], path: Path) -> None:
     ax.barh(names, vals, color=NAVY)
     ax.set_xlabel("Drop in PR-AUC when shuffled")
     ax.set_title("Top Fraud Signals (permutation importance)")
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def plot_calibration(y_test, proba, path: Path) -> None:
+    """Reliability diagram: predicted probability vs observed fraud rate."""
+    # uniform bins: with ~2% fraud, quantile bins put every fraud in one bin
+    frac_pos, mean_pred = calibration_curve(y_test, proba, n_bins=10,
+                                            strategy="uniform")
+    fig, ax = plt.subplots(figsize=(5.5, 4.5))
+    ax.plot([0, 1], [0, 1], color="gray", ls=":", lw=1.5,
+            label="Perfectly calibrated")
+    ax.plot(mean_pred, frac_pos, color=NAVY, lw=2, marker="o",
+            label="Model")
+    ax.set_xlabel("Mean predicted probability")
+    ax.set_ylabel("Observed fraud rate")
+    ax.set_title("Calibration (test set)")
+    ax.legend(loc="upper left")
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
