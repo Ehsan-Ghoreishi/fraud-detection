@@ -2,7 +2,10 @@ import numpy as np
 import pandas as pd
 
 from fraud_detection.features import (
-    FEATURES, RAW_COLUMNS, FraudFeatures, engineer_features,
+    FEATURES,
+    RAW_COLUMNS,
+    FraudFeatures,
+    engineer_features,
 )
 
 
