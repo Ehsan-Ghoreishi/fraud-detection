@@ -40,6 +40,13 @@ def test_breakdowns_cover_typologies_and_months(trained):
     assert 0 <= hidden["flagged"] <= hidden["transactions"]
 
 
+def test_rules_baseline_uses_identical_workload(trained):
+    rb = trained[0]["summary"]["rules_baseline"]
+    assert rb["alerts"] > 0
+    assert set(rb["rules"]) == set(rb["model_same_alerts"]) == {"recall",
+                                                                "precision"}
+
+
 def test_model_beats_random_ranking(trained):
     out, _ = trained
     best = out["summary"]["models"][out["summary"]["best_model"]]

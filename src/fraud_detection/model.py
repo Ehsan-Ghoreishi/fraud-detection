@@ -55,6 +55,7 @@ from fraud_detection.evaluation import (
 )
 from fraud_detection.features import FEATURES, RAW_COLUMNS, add_behavioural_features
 from fraud_detection.models import build_models
+from fraud_detection.rules import compare_with_rules
 from fraud_detection.simulation import FRAUD_TYPES
 from fraud_detection.validation import forward_chaining_oof, out_of_time_split
 
@@ -181,6 +182,11 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     importances = sorted(zip(FEATURES, perm.importances_mean, strict=True),
                          key=lambda t: t[1], reverse=True)
     summary.update(breakdowns(test, proba, flagged))
+    summary["rules_baseline"] = compare_with_rules(test, proba)
+    rb = summary["rules_baseline"]
+    log.info("Rule engine: %s alerts, recall %.1f%% | model at same volume: "
+             "recall %.1f%%", f"{rb['alerts']:,}", rb["rules"]["recall"] * 100,
+             rb["model_same_alerts"]["recall"] * 100)
     log.info("Recall by typology: %s", {k: v["recall"] for k, v in
                                         summary["recall_by_typology"].items()})
     summary["feature_importance"] = [
