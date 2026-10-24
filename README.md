@@ -32,14 +32,18 @@ This project is built around that reality.
 On a held-out test set (25% of data) that played **no part** in feature
 statistics, model selection or threshold tuning:
 
-| Metric | Value | What it means |
-|---|---|---|
-| **Fraud caught (recall)** | **97.6%** | Of all real fraud, we catch nearly all of it |
-| **Precision** | 84.1% | Of everything we flag, ~5 in 6 are truly fraud |
-| **PR-AUC** | 0.990 | Ranking quality on the imbalanced positive class |
-| **ROC-AUC** | 0.9998 | Overall separability |
-| **Traffic flagged** | 2.0% | Only a small slice needs review |
-| **False alarms per real fraud** | 0.2 | Very low customer friction |
+| Metric | Value | 95% CI | What it means |
+|---|---|---|---|
+| **Fraud caught (recall)** | **97.6%** | 95.7–99.2% | Of all real fraud, we catch nearly all of it |
+| **Precision** | 84.1% | 80.3–87.9% | Of everything we flag, ~5 in 6 are truly fraud |
+| **PR-AUC** | 0.990 | 0.983–0.996 | Ranking quality on the imbalanced positive class |
+| **ROC-AUC** | 0.9998 | | Overall separability |
+| **Traffic flagged** | 2.0% | | Only a small slice needs review |
+| **False alarms per real fraud** | 0.2 | | Very low customer friction |
+
+Confidence intervals come from 1,000 stratified bootstrap resamples of the
+test set — with only 255 frauds in it, point estimates alone overstate
+precision.
 
 Concretely, on 15,000 test transactions the model missed **6 frauds out of
 255** while flagging just 47 legitimate transactions for review.
@@ -68,8 +72,9 @@ measured on the test set:
 The cost-optimal threshold lands at **0.77**. An honest finding from the
 held-out data: the cost curve is almost flat between ~0.5 and ~0.8, and on
 this particular test sample the tuned threshold (€1,135) is no better than
-the default 0.5 (€1,005). With only ~250 frauds in the test set, a couple of
-extra misses swing the total. The lesson for a risk team is that the
+the default 0.5 (€1,005). The bootstrap interval for that difference is
+−€325 to +€655 — it spans zero, so the two are statistically
+indistinguishable. The lesson for a risk team is that the
 *cost assumptions* move the threshold far more than fine-tuning does — and
 the pipeline re-runs that analysis in one command:
 
@@ -114,6 +119,12 @@ fraud presents.
 
 ![Confusion Matrix](reports/confusion_matrix.png)
 
+One more thing a risk team should know: because of class weighting, the
+model's outputs are **scores, not probabilities** — a score of 0.7 means
+roughly a 5–10% observed fraud rate. Ranking and the cost-tuned flag are
+unaffected; see the calibration section of the
+[model card](docs/model_card.md).
+
 ---
 
 ## Engineering choices worth calling out
@@ -154,6 +165,7 @@ fraud-detection/
 ├── reports/             # generated metrics.json + figures
 ├── docs/model_card.md   # intended use, limitations, evaluation
 ├── Makefile
+├── LICENSE              # MIT
 └── pyproject.toml
 ```
 
@@ -197,6 +209,11 @@ dependency versions in `requirements.txt`.
 Imbalanced classification · feature engineering · cost-sensitive decision
 thresholds · model evaluation (PR-AUC, precision/recall, confusion matrix) ·
 explainability (permutation importance) · leakage-free pipelines ·
-cross-validated model selection · tested, packaged, CI-checked code ·
+cross-validated model selection · bootstrap confidence intervals ·
+calibration analysis · tested, packaged, CI-checked code ·
 reproducible, documented work — the core toolkit for **fraud, risk, and
 financial-crime analytics**.
+
+## License
+
+Released under the [MIT License](LICENSE).
