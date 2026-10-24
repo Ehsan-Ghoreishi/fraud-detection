@@ -21,7 +21,9 @@ demonstrates deliberately):
 """
 
 from __future__ import annotations
+
 import json
+from pathlib import Path
 
 import pandas as pd
 from sklearn.inspection import permutation_importance
@@ -37,28 +39,40 @@ from fraud_detection.features import FEATURES
 from fraud_detection.evaluation import choose_threshold
 from fraud_detection.models import build_models
 from fraud_detection.config import (
-    CV_FOLDS, DATA_PATH, RANDOM_STATE, REPORTS, TEST_SIZE,
+    COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, CV_FOLDS, DATA_PATH, RANDOM_STATE,
+    REPORTS, TEST_SIZE,
 )
 
 
 # --------------------------------------------------------------------------- #
 # Training & evaluation
 # --------------------------------------------------------------------------- #
-def train_and_evaluate() -> dict:
-    df = pd.read_csv(DATA_PATH)
+def train_and_evaluate(data: pd.DataFrame | None = None,
+                       data_path: Path = DATA_PATH,
+                       reports_dir: Path | None = REPORTS,
+                       cost_fn: float = COST_FALSE_NEGATIVE,
+                       cost_fp: float = COST_FALSE_POSITIVE,
+                       cv_folds: int = CV_FOLDS,
+                       random_state: int = RANDOM_STATE) -> dict:
+    """Select a model, tune its threshold and evaluate it on held-out data.
+
+    Pass ``data`` to train on an in-memory frame instead of ``data_path``.
+    Set ``reports_dir=None`` to skip writing metrics.json.
+    """
+    df = pd.read_csv(data_path) if data is None else data
     X, y = df.drop(columns="is_fraud"), df["is_fraud"]
 
     # stratified split preserves the fraud ratio in both sets
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, stratify=y, random_state=RANDOM_STATE
+        X, y, test_size=TEST_SIZE, stratify=y, random_state=random_state
     )
 
     # Model selection uses out-of-fold predictions on the training set only;
     # the test set is touched exactly once, by the final chosen model.
-    cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True,
-                         random_state=RANDOM_STATE)
+    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True,
+                         random_state=random_state)
     results = {}
-    models = build_models()
+    models = build_models(random_state)
 
     best_name, best_pr_auc, oof = None, -1.0, {}
     for name, model in models.items():
@@ -89,7 +103,8 @@ def train_and_evaluate() -> dict:
     # ---- cost-based threshold selection ------------------------------------
     # tuned on out-of-fold training predictions, then applied unchanged to
     # the test set — exactly how it would be frozen before going live
-    threshold, _ = choose_threshold(y_train, oof[best_name])
+    threshold, _ = choose_threshold(y_train, oof[best_name],
+                                    cost_fn=cost_fn, cost_fp=cost_fp)
     preds = (best_proba >= threshold).astype(int)
 
     print(f"Cost-optimal threshold: {threshold:.3f}")
@@ -125,7 +140,7 @@ def train_and_evaluate() -> dict:
     X_test_features = best_model.named_steps["features"].transform(X_test)
     perm = permutation_importance(
         best_model[1:], X_test_features, y_test, n_repeats=10,
-        random_state=RANDOM_STATE, scoring="average_precision", n_jobs=-1,
+        random_state=random_state, scoring="average_precision", n_jobs=-1,
     )
     importances = sorted(
         zip(FEATURES, perm.importances_mean),
@@ -134,8 +149,9 @@ def train_and_evaluate() -> dict:
     summary["feature_importance"] = [
         {"feature": f, "importance": round(float(v), 4)} for f, v in importances
     ]
-    REPORTS.mkdir(exist_ok=True)
-    (REPORTS / "metrics.json").write_text(json.dumps(summary, indent=2))
+    if reports_dir is not None:
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        (reports_dir / "metrics.json").write_text(json.dumps(summary, indent=2))
     print("\nTop fraud signals the model relies on (permutation importance):")
     for f, v in importances[:6]:
         print(f"  {f:>24}: {v:.4f}")
