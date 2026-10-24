@@ -260,9 +260,12 @@ def breakdowns(test: pd.DataFrame, proba, flagged) -> dict:
     for m in np.unique(month):
         rows = month == m
         y = test["is_fraud"].to_numpy()[rows]
+        has_fraud = bool(y.any())   # PR-AUC and recall are undefined otherwise
         by_month[m] = {
-            "pr_auc": round(float(average_precision_score(y, proba[rows])), 4),
-            "recall": round(float(flagged[rows][y == 1].mean()), 3),
+            "pr_auc": round(float(average_precision_score(y, proba[rows])), 4)
+            if has_fraud else None,
+            "recall": round(float(flagged[rows][y == 1].mean()), 3)
+            if has_fraud else None,
             "fraud_rate": round(float(y.mean()), 5),
         }
     return {
