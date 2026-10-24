@@ -61,10 +61,11 @@ def train_and_evaluate() -> dict:
     results = {}
     models = build_models()
 
-    best_name, best_pr_auc = None, -1.0
+    best_name, best_pr_auc, oof = None, -1.0, {}
     for name, model in models.items():
         oof_proba = cross_val_predict(model, X_train, y_train, cv=cv,
                                       method="predict_proba")[:, 1]
+        oof[name] = oof_proba
 
         roc_auc = roc_auc_score(y_train, oof_proba)
         pr_auc = average_precision_score(y_train, oof_proba)   # key metric for imbalance
@@ -87,7 +88,9 @@ def train_and_evaluate() -> dict:
     print(f"\nBest model by PR-AUC: {best_name}\n")
 
     # ---- cost-based threshold selection ------------------------------------
-    threshold, cost_table = choose_threshold(y_test, best_proba)
+    # tuned on out-of-fold training predictions, then applied unchanged to
+    # the test set — exactly how it would be frozen before going live
+    threshold, cost_table = choose_threshold(y_train, oof[best_name])
     preds = (best_proba >= threshold).astype(int)
 
     print(f"Cost-optimal threshold: {threshold:.3f}")
