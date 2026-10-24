@@ -83,6 +83,36 @@
       1826.7727
     ]
   },
+  "alert_budget": [
+    {
+      "alert_rate": 0.005,
+      "recall": 0.835,
+      "precision": 0.207,
+      "value_recall": 0.758,
+      "alerts_per_day": 925.9
+    },
+    {
+      "alert_rate": 0.01,
+      "recall": 0.852,
+      "precision": 0.106,
+      "value_recall": 0.802,
+      "alerts_per_day": 1851.9
+    },
+    {
+      "alert_rate": 0.02,
+      "recall": 0.87,
+      "precision": 0.054,
+      "value_recall": 0.833,
+      "alerts_per_day": 3703.7
+    },
+    {
+      "alert_rate": 0.05,
+      "recall": 0.904,
+      "precision": 0.022,
+      "value_recall": 0.913,
+      "alerts_per_day": 9259.3
+    }
+  ],
   "feature_importance": [
     {
       "feature": "V14",

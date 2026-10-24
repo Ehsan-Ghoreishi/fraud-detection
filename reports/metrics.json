@@ -92,6 +92,36 @@
       -5244.0277
     ]
   },
+  "alert_budget": [
+    {
+      "alert_rate": 0.005,
+      "recall": 0.575,
+      "precision": 0.615,
+      "value_recall": 0.777,
+      "alerts_per_day": 7.1
+    },
+    {
+      "alert_rate": 0.01,
+      "recall": 0.806,
+      "precision": 0.431,
+      "value_recall": 0.9,
+      "alerts_per_day": 14.2
+    },
+    {
+      "alert_rate": 0.02,
+      "recall": 0.866,
+      "precision": 0.232,
+      "value_recall": 0.942,
+      "alerts_per_day": 28.5
+    },
+    {
+      "alert_rate": 0.05,
+      "recall": 0.89,
+      "precision": 0.095,
+      "value_recall": 0.961,
+      "alerts_per_day": 71.1
+    }
+  ],
   "recall_by_typology": {
     "card_testing": {
       "transactions": 166,
