@@ -28,3 +28,18 @@ version = { attr = "fraud_detection.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "NPY"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["fraud_detection"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
