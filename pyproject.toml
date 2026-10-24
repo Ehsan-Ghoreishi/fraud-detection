@@ -8,6 +8,7 @@ dynamic = ["version"]
 description = "Cost-aware fraud detection pipeline for payment transactions"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "MIT" }
 authors = [{ name = "Seyedmohammad (Ehsan) Ghoreishi" }]
 dependencies = [
     "pandas>=2.0,<4",
