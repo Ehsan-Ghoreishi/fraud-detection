@@ -10,78 +10,98 @@
   },
   "models": {
     "logistic_regression": {
-      "cv_pr_auc": 0.5039,
-      "cv_roc_auc": 0.9563
+      "cv_pr_auc": 0.5862,
+      "cv_roc_auc": 0.9598,
+      "cv_pr_auc_by_fold": [
+        0.6407,
+        0.4038,
+        0.5811,
+        0.719
+      ],
+      "test_pr_auc_diagnostic": 0.5352
     },
     "random_forest": {
-      "cv_pr_auc": 0.7469,
-      "cv_roc_auc": 0.9693
+      "cv_pr_auc": 0.7609,
+      "cv_roc_auc": 0.9714,
+      "cv_pr_auc_by_fold": [
+        0.7723,
+        0.6273,
+        0.7643,
+        0.8796
+      ],
+      "test_pr_auc": 0.652,
+      "test_roc_auc": 0.9581,
+      "test_brier": 0.00322
     },
     "gradient_boosting": {
-      "cv_pr_auc": 0.7529,
-      "cv_roc_auc": 0.9726,
-      "test_pr_auc": 0.7477,
-      "test_roc_auc": 0.9659,
-      "test_brier": 0.00264
+      "cv_pr_auc": 0.7525,
+      "cv_roc_auc": 0.9748,
+      "cv_pr_auc_by_fold": [
+        0.7961,
+        0.5581,
+        0.7967,
+        0.859
+      ],
+      "test_pr_auc_diagnostic": 0.7477
     }
   },
-  "best_model": "gradient_boosting",
-  "cost_optimal_threshold": 0.0654,
-  "recall_fraud": 0.832,
-  "precision_fraud": 0.354,
-  "value_recall": 0.928,
-  "flagged_rate": 0.0126,
-  "alerts_per_day": 17.9,
+  "best_model": "random_forest",
+  "cost_optimal_threshold": 0.1313,
+  "recall_fraud": 0.825,
+  "precision_fraud": 0.368,
+  "value_recall": 0.923,
+  "flagged_rate": 0.012,
+  "alerts_per_day": 17.0,
   "confusion_matrix": {
-    "tn": 85630,
-    "fp": 704,
-    "fn": 78,
-    "tp": 386
+    "tn": 85677,
+    "fp": 657,
+    "fn": 81,
+    "tp": 383
   },
   "business_cost": {
     "chargeback_fee": 20.0,
     "cost_false_positive": 5.0,
-    "test_cost_at_threshold": 9548.120000000003,
-    "test_cost_at_default_0_5": 12775.310000000001,
+    "test_cost_at_threshold": 9726.140000000003,
+    "test_cost_at_default_0_5": 18705.260000000002,
     "test_cost_without_model": 71627.13,
-    "test_savings_vs_no_model": 62079.01,
+    "test_savings_vs_no_model": 61900.990000000005,
     "threshold_method": "alert_rate_transfer",
     "threshold_tuned_on_folds": 2,
-    "target_alert_rate": 0.01257,
-    "threshold_cv_scale": 0.0255,
-    "test_cost_at_cv_scale_threshold": 11396.31,
+    "target_alert_rate": 0.01153,
+    "threshold_cv_scale": 0.2,
+    "test_cost_at_cv_scale_threshold": 10452.77,
     "test_oracle_threshold": 0.12,
-    "test_cost_at_oracle": 8932.429999999998,
-    "threshold_regret": 615.6900000000041
+    "test_cost_at_oracle": 9664.060000000001,
+    "threshold_regret": 62.080000000001746
   },
   "confidence_intervals_95": {
     "pr_auc": [
-      0.6901,
-      0.7924
+      0.5857,
+      0.7039
     ],
     "recall": [
-      0.7873,
-      0.8662
+      0.7787,
+      0.863
     ],
     "precision": [
-      0.2957,
-      0.4016
+      0.3053,
+      0.4178
     ],
     "cost_vs_baseline": [
-      -5757.169,
-      -1099.1318
+      -12983.5365,
+      -5244.0277
     ]
   },
   "recall_by_typology": {
     "card_testing": {
       "transactions": 166,
-      "recall": 0.88,
-      "value_recall": 0.991
+      "recall": 0.861,
+      "value_recall": 0.99
     },
     "account_takeover": {
       "transactions": 222,
-      "recall": 0.905,
-      "value_recall": 0.93
+      "recall": 0.901,
+      "value_recall": 0.922
     },
     "cloned_card": {
       "transactions": 46,
@@ -90,37 +110,37 @@
     },
     "stealth": {
       "transactions": 54,
-      "recall": 0.019,
-      "value_recall": 0.02
+      "recall": 0.0,
+      "value_recall": 0.0
     }
   },
   "unreported_fraud": {
     "transactions": 24,
-    "flagged": 8
+    "flagged": 6
   },
   "performance_by_month": {
     "2026-05": {
-      "pr_auc": 0.717,
-      "recall": 0.811,
+      "pr_auc": 0.6112,
+      "recall": 0.807,
       "fraud_rate": 0.00554
     },
     "2026-06": {
-      "pr_auc": 0.7831,
-      "recall": 0.855,
+      "pr_auc": 0.7057,
+      "recall": 0.845,
       "fraud_rate": 0.00514
     }
   },
   "episodes": {
     "episodes": 158,
-    "detection_rate": 0.658,
-    "detected_on_first_txn": 0.462,
+    "detection_rate": 0.639,
+    "detected_on_first_txn": 0.449,
     "median_txns_before_alert": 0.0,
-    "value_lost_before_detection": 0.086,
+    "value_lost_before_detection": 0.097,
     "detection_rate_by_typology": {
-      "account_takeover": 0.985,
+      "account_takeover": 0.955,
       "card_testing": 1.0,
       "cloned_card": 1.0,
-      "stealth": 0.019
+      "stealth": 0.0
     }
   },
   "rules_baseline": {
@@ -130,8 +150,8 @@
       "precision": 0.136
     },
     "model_same_alerts": {
-      "recall": 0.875,
-      "precision": 0.192
+      "recall": 0.869,
+      "precision": 0.19
     },
     "rule_precision": {
       "high_amount": 0.025,
@@ -143,111 +163,111 @@
   "feature_importance": [
     {
       "feature": "log_device_age_days",
-      "importance": 0.6372
+      "importance": 0.5059
     },
     {
       "feature": "merchant_risk",
-      "importance": 0.112
-    },
-    {
-      "feature": "log_distance",
-      "importance": 0.0645
-    },
-    {
-      "feature": "log_amount",
-      "importance": 0.0399
-    },
-    {
-      "feature": "log_prior_txn_count",
-      "importance": 0.0383
-    },
-    {
-      "feature": "small_txn_count_1h",
-      "importance": 0.0381
-    },
-    {
-      "feature": "log_secs_since_last_txn",
-      "importance": 0.0338
-    },
-    {
-      "feature": "log_amount_sum_24h",
-      "importance": 0.0297
-    },
-    {
-      "feature": "txn_count_1h",
-      "importance": 0.0257
-    },
-    {
-      "feature": "log_amount_vs_customer",
-      "importance": 0.0251
-    },
-    {
-      "feature": "is_online",
-      "importance": 0.0113
-    },
-    {
-      "feature": "hour",
-      "importance": 0.011
-    },
-    {
-      "feature": "foreign_country",
-      "importance": 0.0087
-    },
-    {
-      "feature": "log_amount_vs_category",
-      "importance": 0.0065
-    },
-    {
-      "feature": "cat_online_retail",
-      "importance": 0.0047
-    },
-    {
-      "feature": "cat_fuel",
-      "importance": 0.0045
-    },
-    {
-      "feature": "cat_travel",
-      "importance": 0.0028
-    },
-    {
-      "feature": "txn_count_24h",
-      "importance": 0.0025
-    },
-    {
-      "feature": "cat_grocery",
-      "importance": 0.002
-    },
-    {
-      "feature": "cat_jewelry",
-      "importance": 0.0014
-    },
-    {
-      "feature": "cat_gift_cards",
-      "importance": 0.0006
-    },
-    {
-      "feature": "new_category",
-      "importance": 0.0002
-    },
-    {
-      "feature": "is_night",
-      "importance": 0.0002
+      "importance": 0.1583
     },
     {
       "feature": "new_device",
-      "importance": 0.0
+      "importance": 0.1505
     },
     {
-      "feature": "cat_electronics",
-      "importance": -0.0002
+      "feature": "log_secs_since_last_txn",
+      "importance": 0.072
+    },
+    {
+      "feature": "log_amount_sum_24h",
+      "importance": 0.0302
+    },
+    {
+      "feature": "log_distance",
+      "importance": 0.0297
+    },
+    {
+      "feature": "log_amount",
+      "importance": 0.025
+    },
+    {
+      "feature": "log_prior_txn_count",
+      "importance": 0.0238
+    },
+    {
+      "feature": "cat_grocery",
+      "importance": 0.0203
+    },
+    {
+      "feature": "txn_count_24h",
+      "importance": 0.0145
+    },
+    {
+      "feature": "cat_online_retail",
+      "importance": 0.0131
+    },
+    {
+      "feature": "small_txn_count_1h",
+      "importance": 0.0128
+    },
+    {
+      "feature": "txn_count_1h",
+      "importance": 0.0081
+    },
+    {
+      "feature": "log_amount_vs_customer",
+      "importance": 0.0079
+    },
+    {
+      "feature": "hour",
+      "importance": 0.0026
+    },
+    {
+      "feature": "cat_travel",
+      "importance": 0.0022
+    },
+    {
+      "feature": "is_night",
+      "importance": 0.0015
+    },
+    {
+      "feature": "cat_jewelry",
+      "importance": 0.0009
     },
     {
       "feature": "cat_restaurant",
-      "importance": -0.0009
+      "importance": 0.0005
+    },
+    {
+      "feature": "cat_fuel",
+      "importance": 0.0005
+    },
+    {
+      "feature": "cat_gift_cards",
+      "importance": 0.0005
+    },
+    {
+      "feature": "is_online",
+      "importance": 0.0002
+    },
+    {
+      "feature": "new_category",
+      "importance": -0.0002
+    },
+    {
+      "feature": "cat_electronics",
+      "importance": -0.0006
+    },
+    {
+      "feature": "log_amount_vs_category",
+      "importance": -0.0074
+    },
+    {
+      "feature": "foreign_country",
+      "importance": -0.0079
     },
     {
       "feature": "cat_digital_goods",
-      "importance": -0.0011
+      "importance": -0.0171
     }
   ]
 }
