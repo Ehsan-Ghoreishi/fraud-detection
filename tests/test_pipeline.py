@@ -28,6 +28,18 @@ def test_metrics_file_is_complete(trained):
     assert {d["feature"] for d in metrics["feature_importance"]} == set(FEATURES)
 
 
+def test_breakdowns_cover_typologies_and_months(trained):
+    out, _ = trained
+    summary, test = out["summary"], out["test"]
+    by_type = summary["recall_by_typology"]
+    assert set(by_type) == set(test.fraud_type) - {"none"}
+    assert all(0 <= v["recall"] <= 1 for v in by_type.values())
+    months = set(test.timestamp.dt.to_period("M").astype(str))
+    assert set(summary["performance_by_month"]) == months
+    hidden = summary["unreported_fraud"]
+    assert 0 <= hidden["flagged"] <= hidden["transactions"]
+
+
 def test_model_beats_random_ranking(trained):
     out, _ = trained
     best = out["summary"]["models"][out["summary"]["best_model"]]
@@ -84,5 +96,6 @@ def test_cli_end_to_end(tmp_path):
     assert {p.name for p in reports.iterdir()} == {
         "metrics.json", "pr_curve.png", "confusion_matrix.png",
         "cost_curve.png", "feature_importance.png", "calibration.png",
+        "recall_by_typology.png",
     }
     assert (tmp_path / "s.csv").stat().st_size > 0

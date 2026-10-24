@@ -55,6 +55,7 @@ from fraud_detection.evaluation import (
 )
 from fraud_detection.features import FEATURES, RAW_COLUMNS, add_behavioural_features
 from fraud_detection.models import build_models
+from fraud_detection.simulation import FRAUD_TYPES
 from fraud_detection.validation import forward_chaining_oof, out_of_time_split
 
 log = logging.getLogger(__name__)
@@ -179,6 +180,9 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     )
     importances = sorted(zip(FEATURES, perm.importances_mean, strict=True),
                          key=lambda t: t[1], reverse=True)
+    summary.update(breakdowns(test, proba, flagged))
+    log.info("Recall by typology: %s", {k: v["recall"] for k, v in
+                                        summary["recall_by_typology"].items()})
     summary["feature_importance"] = [
         {"feature": f, "importance": round(float(v), 4)} for f, v in importances
     ]
@@ -196,6 +200,46 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
         "train": train.assign(oof_proba=oof[best_name]),
         "test": test.assign(proba=proba, flagged=flagged.astype(int)),
         "y_test": y_test, "proba": proba,
+    }
+
+
+def breakdowns(test: pd.DataFrame, proba, flagged) -> dict:
+    """Where the model works and where it doesn't, on the test period.
+
+    Uses the ground-truth ``fraud_type`` (reported or not), which a real
+    bank would approximate with investigator case outcomes.
+    """
+    flagged = np.asarray(flagged, bool)
+    by_type = {}
+    for ftype in FRAUD_TYPES:
+        rows = (test["fraud_type"] == ftype).to_numpy()
+        if rows.any():
+            by_type[ftype] = {
+                "transactions": int(rows.sum()),
+                "recall": round(float(flagged[rows].mean()), 3),
+                "value_recall": round(value_recall(
+                    rows, flagged, test["amount"]), 3),
+            }
+
+    hidden = ((test["fraud_type"] != "none") & (test["is_fraud"] == 0))\
+        .to_numpy()
+    month = test["timestamp"].dt.to_period("M").astype(str).to_numpy()
+    by_month = {}
+    for m in np.unique(month):
+        rows = month == m
+        y = test["is_fraud"].to_numpy()[rows]
+        by_month[m] = {
+            "pr_auc": round(float(average_precision_score(y, proba[rows])), 4),
+            "recall": round(float(flagged[rows][y == 1].mean()), 3),
+            "fraud_rate": round(float(y.mean()), 5),
+        }
+    return {
+        "recall_by_typology": by_type,
+        "unreported_fraud": {
+            "transactions": int(hidden.sum()),
+            "flagged": int(flagged[hidden].sum()),
+        },
+        "performance_by_month": by_month,
     }
 
 
