@@ -3,7 +3,11 @@ import pandas as pd
 import pytest
 from sklearn.base import BaseEstimator, ClassifierMixin
 
-from fraud_detection.validation import forward_chaining_oof, out_of_time_split
+from fraud_detection.validation import (
+    apply_label_delay,
+    forward_chaining_oof,
+    out_of_time_split,
+)
 
 
 def _frame(n=100):
@@ -62,3 +66,26 @@ def test_forward_chaining_skips_folds_without_fraud():
     # folds trained on rows < 60 have a single class and are left out
     assert np.isnan(oof[:80]).all()
     assert not np.isnan(oof[80:]).any()
+
+
+def test_label_delay_drops_immature_labels():
+    df = _frame()
+    train, _, cut = out_of_time_split(df, "2026-01-20")
+    kept = apply_label_delay(train, cut, label_delay_days=5)
+    assert kept.timestamp.max() < cut - pd.Timedelta(days=5)
+    assert kept.timestamp.max() >= cut - pd.Timedelta(days=5, hours=6)
+
+
+def test_label_delay_rejects_empty_training_set():
+    train, _, cut = out_of_time_split(_frame(), "2026-01-05")
+    with pytest.raises(ValueError):
+        apply_label_delay(train, cut, label_delay_days=30)
+
+
+def test_forward_chaining_gap_separates_train_and_validation():
+    df = _frame(100)
+    oof = forward_chaining_oof(_RecordsTrainingRange(), df[["x"]], df["y"],
+                               n_splits=4, gap=10)
+    predicted = ~np.isnan(oof)
+    # every validation row is at least 10 rows after anything trained on
+    assert (df.x[predicted] - oof[predicted] * 1000 > 10).all()

@@ -1,5 +1,6 @@
 import json
 
+import pandas as pd
 import pytest
 
 from fraud_detection.cli import main as cli
@@ -65,7 +66,8 @@ def test_model_beats_random_ranking(trained):
 def test_evaluation_is_out_of_time(trained):
     out, _ = trained
     train, test = out["train"], out["test"]
-    assert train.timestamp.max() < test.timestamp.min()
+    delay = pd.Timedelta(days=out["summary"]["data"]["label_delay_days"])
+    assert train.timestamp.max() < test.timestamp.min() - delay
     assert not set(train.transaction_id) & set(test.transaction_id)
     # forward chaining: the earliest chunk has no out-of-fold prediction
     assert train.oof_proba.isna().iloc[0]

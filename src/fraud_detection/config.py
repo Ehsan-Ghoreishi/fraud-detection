@@ -14,6 +14,9 @@ RANDOM_STATE = 42
 # out-of-time evaluation: train on Jan-Apr, test on May-Jun
 TEST_START = "2026-05-01"
 CV_FOLDS = 4
+# fraud labels (chargebacks, customer reports) arrive with a delay: at
+# deployment the most recent weeks cannot be used for training yet
+LABEL_DELAY_DAYS = 14
 
 # Business cost assumptions (euros). These are the lever a risk team tunes.
 # A missed fraud costs the transaction amount plus a chargeback handling fee;

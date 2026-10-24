@@ -42,6 +42,7 @@ from fraud_detection.config import (
     COST_FALSE_POSITIVE,
     CV_FOLDS,
     DATA_PATH,
+    LABEL_DELAY_DAYS,
     RANDOM_STATE,
     REPORTS,
     TEST_START,
@@ -59,7 +60,11 @@ from fraud_detection.features import FEATURES, RAW_COLUMNS, add_behavioural_feat
 from fraud_detection.models import build_models
 from fraud_detection.rules import compare_with_rules
 from fraud_detection.simulation import FRAUD_TYPES
-from fraud_detection.validation import forward_chaining_oof, out_of_time_split
+from fraud_detection.validation import (
+    apply_label_delay,
+    forward_chaining_oof,
+    out_of_time_split,
+)
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +76,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
                        cost_fp: float = COST_FALSE_POSITIVE,
                        cv_folds: int = CV_FOLDS,
                        test_start: str | None = TEST_START,
+                       label_delay_days: float = LABEL_DELAY_DAYS,
                        models: list[str] | None = None,
                        random_state: int = RANDOM_STATE) -> dict:
     """Select a model, tune its threshold and evaluate it out of time.
@@ -84,11 +90,24 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     enriched = add_behavioural_features(raw).sort_values(
         ["timestamp", "transaction_id"], kind="stable").reset_index(drop=True)
     train, test, cut = out_of_time_split(enriched, test_start)
+    train = apply_label_delay(train, cut, label_delay_days)
     X_train, y_train = train[RAW_COLUMNS], train["is_fraud"]
     X_test, y_test = test[RAW_COLUMNS], test["is_fraud"]
-    log.info("Train: %s txns to %s | Test: %s txns from %s (out of time)",
-             f"{len(train):,}", (cut - pd.Timedelta(days=1)).date(),
+    log.info("Train: %s txns to %s | %g-day label-delay embargo | "
+             "Test: %s txns from %s (out of time)", f"{len(train):,}",
+             train["timestamp"].max().date(), label_delay_days,
              f"{len(test):,}", cut.date())
+    # the same embargo between every CV training window and its validation
+    # window, expressed in rows
+    span_days = (train["timestamp"].max() - train["timestamp"].min()).days or 1
+    cv_gap = int(round(label_delay_days * len(train) / span_days))
+    # on short histories a full embargo leaves no room for the folds; keep
+    # at least half of the first training window
+    max_gap = len(train) // (2 * (cv_folds + 1))
+    if cv_gap > max_gap:
+        log.warning("CV label-delay gap capped at %d rows (wanted %d): "
+                    "training history is short", max_gap, cv_gap)
+        cv_gap = max_gap
 
     # ---- model selection on forward-chaining out-of-fold predictions -------
     candidates = build_models(random_state)
@@ -96,7 +115,8 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
         candidates = {k: candidates[k] for k in models}
     results, oof = {}, {}
     for name, model in candidates.items():
-        oof[name] = forward_chaining_oof(model, X_train, y_train, cv_folds)
+        oof[name] = forward_chaining_oof(model, X_train, y_train, cv_folds,
+                                         gap=cv_gap)
         seen = ~np.isnan(oof[name])
         pr_auc = average_precision_score(y_train[seen], oof[name][seen])
         roc_auc = roc_auc_score(y_train[seen], oof[name][seen])
@@ -152,6 +172,8 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
             "train_transactions": len(train), "test_transactions": len(test),
             "train_fraud_rate": round(float(y_train.mean()), 5),
             "test_fraud_rate": round(float(y_test.mean()), 5),
+            "train_end": str(train["timestamp"].max().date()),
+            "label_delay_days": label_delay_days,
             "test_start": str(cut.date()),
         },
         "models": results,

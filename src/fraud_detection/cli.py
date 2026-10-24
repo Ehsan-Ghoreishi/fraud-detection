@@ -33,7 +33,9 @@ def _train(args) -> None:
     out = train_and_evaluate(data_path=args.data, reports_dir=args.reports,
                              chargeback_fee=args.chargeback_fee,
                              cost_fp=args.cost_fp, cv_folds=args.cv_folds,
-                             test_start=args.test_start, models=args.models)
+                             test_start=args.test_start,
+                             label_delay_days=args.label_delay_days,
+                             models=args.models)
     path = save_model(out["model"], out["threshold"],
                       metadata={"best_model": out["summary"]["best_model"],
                                 "chargeback_fee": args.chargeback_fee,
@@ -98,6 +100,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--cv-folds", type=int, default=config.CV_FOLDS)
     p.add_argument("--test-start", default=config.TEST_START,
                    help="first day of the out-of-time test period")
+    p.add_argument("--label-delay-days", type=float,
+                   default=config.LABEL_DELAY_DAYS,
+                   help="days before --test-start whose labels are not yet "
+                        "known (default: %(default)s)")
     p.add_argument("--models", nargs="+", metavar="NAME",
                    help="restrict candidates, e.g. gradient_boosting")
     p.add_argument("--no-plots", dest="plots", action="store_false",

@@ -31,16 +31,37 @@ def out_of_time_split(df: pd.DataFrame, test_start: str | pd.Timestamp | None,
     return train, test, cut
 
 
+def apply_label_delay(train: pd.DataFrame, cut: pd.Timestamp,
+                      label_delay_days: float) -> pd.DataFrame:
+    """Drop training rows whose labels would not be known yet at ``cut``.
+
+    Chargebacks and fraud reports arrive days to weeks after the
+    transaction. A model deployed at ``cut`` can only learn from
+    transactions whose outcome is already known, so the last
+    ``label_delay_days`` before the cut are excluded from training (they
+    still count as *history* for behavioural features, which need no
+    labels).
+    """
+    embargo_start = cut - pd.Timedelta(days=label_delay_days)
+    kept = train[pd.to_datetime(train["timestamp"]) < embargo_start]
+    if kept.empty:
+        raise ValueError("label delay leaves no training data")
+    return kept
+
+
 def forward_chaining_oof(model, X: pd.DataFrame, y: pd.Series,
-                         n_splits: int = 4) -> np.ndarray:
+                         n_splits: int = 4, gap: int = 0) -> np.ndarray:
     """Out-of-fold probabilities where each fold is trained on the past only.
 
-    Rows must be in time order. The first chunk is never predicted (there
-    is nothing earlier to train on), so its entries are NaN — as are folds
-    whose training window contains no fraud yet.
+    Rows must be in time order. ``gap`` rows between each training window
+    and its validation window play the role of the label-delay embargo.
+    The first chunk is never predicted (there is nothing earlier to train
+    on), so its entries are NaN — as are folds whose training window
+    contains no fraud yet.
     """
     oof = np.full(len(X), np.nan)
-    for train_idx, val_idx in TimeSeriesSplit(n_splits=n_splits).split(X):
+    for train_idx, val_idx in TimeSeriesSplit(n_splits=n_splits,
+                                              gap=gap).split(X):
         if y.iloc[train_idx].nunique() < 2:
             continue
         fold = clone(model).fit(X.iloc[train_idx], y.iloc[train_idx])
