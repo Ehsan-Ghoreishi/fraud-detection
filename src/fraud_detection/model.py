@@ -53,6 +53,7 @@ from fraud_detection.protocol import (
     deploy_threshold,
     evaluate_test,
     select_model,
+    selection_diagnostics,
     split_with_embargo,
     tune_alert_rate,
 )
@@ -109,6 +110,8 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
                        cost_fp, groups=test["customer_id"], seed=random_state)
     flagged = ev["flagged"]
     results[best_name].update(ev["ranking"])
+    selection_diagnostics(candidates, best_name, X_train, y_train, X_test,
+                          y_test, results)
     cost = ev["business_cost"]
     summary = {
         "data": {

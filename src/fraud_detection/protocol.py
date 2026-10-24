@@ -110,6 +110,24 @@ def select_model(candidates: dict, X_train, y_train, cv_folds: int,
     return best_name, results, oof, folds
 
 
+def selection_diagnostics(candidates: dict, best_name: str, X_train, y_train,
+                          X_test, y_test, results: dict) -> None:
+    """Add every runner-up's test PR-AUC to ``results`` (in place).
+
+    Not used for any decision — the choice is already made on CV. It shows
+    how much a small CV margin can mean on the future, i.e. how noisy model
+    selection is, instead of leaving that question to the reader.
+    """
+    for name, model in candidates.items():
+        if name == best_name:
+            continue
+        proba = model.fit(X_train, y_train).predict_proba(X_test)[:, 1]
+        score = round(float(average_precision_score(y_test, proba)), 4)
+        results[name]["test_pr_auc_diagnostic"] = score
+        log.info(f"{name:>22} | test PR-AUC {score:.4f} "
+                 "(diagnostic only, not used for selection)")
+
+
 def tune_alert_rate(y_train, oof, folds, fn_cost, cost_fp: float,
                     cv_folds: int, threshold_folds: int):
     """Cost-optimal threshold and alert rate on the most recent CV folds.

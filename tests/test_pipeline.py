@@ -41,6 +41,15 @@ def test_breakdowns_cover_typologies_and_months(trained):
     assert 0 <= hidden["flagged"] <= hidden["transactions"]
 
 
+def test_runner_ups_get_diagnostic_test_scores(trained):
+    models = trained[0]["summary"]["models"]
+    best = trained[0]["summary"]["best_model"]
+    for name, scores in models.items():
+        if name != best:
+            assert 0 <= scores["test_pr_auc_diagnostic"] <= 1
+        assert len(scores["cv_pr_auc_by_fold"]) >= 1
+
+
 def test_threshold_is_placed_on_the_embargo_window(trained):
     out, _ = trained
     cost = out["summary"]["business_cost"]

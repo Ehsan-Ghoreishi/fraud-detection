@@ -48,6 +48,7 @@ from fraud_detection.protocol import (
     deploy_threshold,
     evaluate_test,
     select_model,
+    selection_diagnostics,
     split_with_embargo,
     tune_alert_rate,
 )
@@ -102,6 +103,8 @@ def train_and_evaluate_ieee(data: pd.DataFrame | None = None,
                        cost_fp, groups=test["customer_id"], seed=random_state)
     flagged = ev["flagged"]
     results[best_name].update(ev["ranking"])
+    selection_diagnostics(candidates, best_name, train, y_train, test,
+                          test["is_fraud"], results)
     if "gradient_boosting_vesta_only" in results and "gradient_boosting" in results:
         lift = (results["gradient_boosting"]["cv_pr_auc"]
                 - results["gradient_boosting_vesta_only"]["cv_pr_auc"])
