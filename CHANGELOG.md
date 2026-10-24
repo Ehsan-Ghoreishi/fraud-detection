@@ -4,6 +4,52 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] — 2026-10-24
+
+Real data. The evaluation protocol now runs on two real datasets next to
+the simulated portfolio, and running it on real data exposed three flaws
+in the protocol itself, fixed here.
+
+### Added
+- **ULB real-data track** (`ulb.py`, `make ulb`): 284,807 European card
+  transactions from OpenML 42175; out-of-time test on the last 12 hours.
+  Test PR-AUC 0.777 (95% CI 0.705–0.842).
+- **IEEE-CIS real-data track** (`ieee/`, `make ieee`): Kaggle download,
+  client reconstruction (card1 + addr1 + account start day), point-in-time
+  behaviour features on real clients, an ablation without them, metrics on
+  clients unseen before the test period, family-level importance and
+  reason codes. Tested on an IEEE-CIS-schema fixture; needs a Kaggle
+  licence to run.
+- `protocol.py`: the evaluation protocol as reusable steps shared by all
+  tracks.
+- Runner-up models' test scores as diagnostics (`test_pr_auc_diagnostic`)
+  and per-fold CV scores (`cv_pr_auc_by_fold`).
+- Grouped permutation importance and custom reason groups in `explain.py`.
+
+### Fixed
+- **CV scores pooled across folds** mixed fold models' score scales:
+  shifting one fold boundary by 188 rows moved CV PR-AUC from 0.75 to 0.59.
+  CV is now scored per fold and averaged.
+- **The first CV fold model trained on ~7 days** and dominated the
+  average. Every fold model now trains on ≥ 50% of the history.
+- Periods were measured in whole days (embargo gap, alerts per day), which
+  broke on short histories.
+- Reason codes listed device age and the new-device flag as two reasons and
+  called EUR 2 test charges a "large amount".
+
+### Changed
+- Simulated-track results under the corrected protocol: random forest
+  selected (CV 0.761 vs 0.753 for gradient boosting); test PR-AUC 0.652,
+  recall 82.5%, 92.3% of fraud value caught, threshold regret €62. The
+  diagnostic shows gradient boosting at 0.748 on test: the CV margin was
+  noise, and the selection rule was deliberately not changed after seeing
+  it.
+
+### Known limitation
+- Alert-rate threshold anchoring fails on ULB: the 6-hour anchor window had
+  a third of the training fraud rate, and the deployed threshold costs
+  €6.5k vs €5.1k at 0.5. Anchoring needs a window covering a full cycle.
+
 ## [1.1.0] — 2026-10-24
 
 Addresses the questions an experienced fraud reviewer would ask about
