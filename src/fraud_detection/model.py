@@ -189,7 +189,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     ]
     if reports_dir is not None:
         reports_dir.mkdir(parents=True, exist_ok=True)
-        (reports_dir / "metrics.json").write_text(json.dumps(summary, indent=2))
+        (reports_dir / "metrics.json").write_text(json.dumps(summary, indent=2) + "\n")
     log.info("\nTop fraud signals the model relies on (permutation importance):")
     for f, v in importances[:6]:
         log.info(f"  {f:>24}: {v:.4f}")
