@@ -27,8 +27,9 @@ whose difficulty resembles production fraud data rather than a textbook:
   ``fraud_type`` records the truth), as happens when cardholders don't
   notice or don't dispute.
 
-``fraud_type`` is ground truth for analysis only and must never be used as a
-model input.
+``fraud_type`` and ``fraud_episode`` (the attack a fraud transaction belongs
+to, -1 for legit) are ground truth for analysis only and must never be used
+as model inputs.
 """
 
 from __future__ import annotations
@@ -109,7 +110,7 @@ def simulate_transactions(config: SimulationConfig | None = None,
     cols = ["transaction_id", "timestamp", "customer_id", "merchant_id",
             "merchant_category", "merchant_risk", "channel", "device_id",
             "foreign_country", "distance_from_home", "amount",
-            "is_fraud", "fraud_type"]
+            "is_fraud", "fraud_type", "fraud_episode"]
     return df[cols]
 
 
@@ -227,6 +228,7 @@ def _legit_transactions(config, customers, merchants, rng) -> pd.DataFrame:
         "channel": np.where(online, "online", "in_store"), "device_id": device,
         "foreign_country": foreign.astype(int), "distance_from_home": distance,
         "amount": amount, "is_fraud": 0, "fraud_type": "none",
+        "fraud_episode": -1,
     })
     df = df[df.t_days < config.days]
     return _attach_merchants(df.reset_index(drop=True), merchants, rng)
@@ -274,7 +276,7 @@ def _frame(ep, cid, t, cat, online, device, foreign, distance, amount, ftype):
         "device_id": np.where(online, device, ""),
         "foreign_country": np.broadcast_to(foreign, n).astype(int),
         "distance_from_home": distance, "amount": amount,
-        "fraud_type": ftype,
+        "fraud_type": ftype, "fraud_episode": ep,
     })
 
 

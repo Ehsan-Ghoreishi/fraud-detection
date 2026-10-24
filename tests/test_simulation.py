@@ -41,6 +41,16 @@ def test_labels_are_noisy_but_never_invented(sim):
     assert ((sim.fraud_type != "none") & (sim.is_fraud == 0)).any()
 
 
+def test_episodes_group_fraud_by_customer_and_typology(sim):
+    fraud = sim[sim.fraud_type != "none"]
+    assert (sim.fraud_episode[sim.fraud_type == "none"] == -1).all()
+    assert (fraud.fraud_episode >= 0).all()
+    per_episode = fraud.groupby("fraud_episode")
+    assert (per_episode.customer_id.nunique() == 1).all()
+    assert (per_episode.fraud_type.nunique() == 1).all()
+    assert per_episode.size().max() > 1           # bursts, not single rows
+
+
 def test_every_typology_appears(sim):
     assert set(sim.fraud_type) - {"none"} == set(FRAUD_TYPES)
 
