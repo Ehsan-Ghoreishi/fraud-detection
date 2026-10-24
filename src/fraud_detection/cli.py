@@ -80,6 +80,17 @@ def _ieee_train(args) -> None:
     log.info("IEEE-CIS reports written to %s", args.reports)
 
 
+def _ulb_train(args) -> None:
+    from fraud_detection.plots import make_ulb
+    from fraud_detection.ulb import train_and_evaluate_ulb
+
+    out = train_and_evaluate_ulb(reports_dir=args.reports,
+                                 chargeback_fee=args.chargeback_fee,
+                                 cost_fp=args.cost_fp)
+    make_ulb(out, args.reports)
+    log.info("ULB reports written to %s", args.reports)
+
+
 def build_parser() -> argparse.ArgumentParser:
     from fraud_detection.scoring import MODEL_PATH
 
@@ -154,6 +165,16 @@ def build_parser() -> argparse.ArgumentParser:
                    default=config.LABEL_DELAY_DAYS)
     p.add_argument("--models", nargs="+", metavar="NAME")
     p.set_defaults(func=_ieee_train)
+
+    from fraud_detection.ulb import ULB_REPORTS
+
+    p = sub.add_parser("ulb-train",
+                       help="run the protocol on the real ULB card data "
+                            "(downloads from OpenML)")
+    p.add_argument("--reports", type=Path, default=ULB_REPORTS)
+    p.add_argument("--chargeback-fee", type=float, default=config.CHARGEBACK_FEE)
+    p.add_argument("--cost-fp", type=float, default=config.COST_FALSE_POSITIVE)
+    p.set_defaults(func=_ulb_train)
 
     p = sub.add_parser("score", help="score a CSV with a saved model")
     p.add_argument("input", type=Path)

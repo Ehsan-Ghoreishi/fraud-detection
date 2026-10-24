@@ -59,6 +59,22 @@ def make_all(out: dict, reports_dir: Path = REPORTS) -> None:
                              reports_dir / "recall_by_typology.png")
 
 
+def make_ulb(out: dict, reports_dir: Path) -> None:
+    """Report figures for the ULB track."""
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    summary, cost = out["summary"], out["summary"]["business_cost"]
+    plot_pr_curve(out["y_test"], out["proba"], reports_dir / "pr_curve.png")
+    plot_confusion(out["y_test"], out["proba"], out["threshold"],
+                   reports_dir / "confusion_matrix.png")
+    plot_cost_curve(out["train"], out["test"], out["threshold"],
+                    cost["chargeback_fee"], cost["cost_false_positive"],
+                    reports_dir / "cost_curve.png",
+                    threshold_cv=out["threshold_cv"])
+    plot_feature_importance(summary["feature_importance"],
+                            reports_dir / "feature_importance.png")
+    plot_calibration(out["y_test"], out["proba"], reports_dir / "calibration.png")
+
+
 def make_ieee(out: dict, reports_dir: Path) -> None:
     """Report figures for the IEEE-CIS track."""
     reports_dir.mkdir(parents=True, exist_ok=True)

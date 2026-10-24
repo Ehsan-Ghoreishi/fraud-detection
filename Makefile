@@ -1,7 +1,7 @@
 PYTHON ?= python
 CLI := $(PYTHON) -m fraud_detection
 
-.PHONY: install data eda train all ieee test lint clean
+.PHONY: install data eda train all ieee ulb test lint clean
 
 install:  ## install the package with dev tools
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -16,6 +16,9 @@ train: data  ## select, tune, evaluate, save model and figures
 	$(CLI) train
 
 all: eda train  ## reproduce every artefact in reports/ (simulated track)
+
+ulb:  ## real ULB card-data track (downloads from OpenML)
+	$(CLI) ulb-train
 
 ieee:  ## real IEEE-CIS track (needs a Kaggle token, see README)
 	$(CLI) ieee-download
