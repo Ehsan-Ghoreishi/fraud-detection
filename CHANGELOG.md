@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-10-24
+
+### Added
+- 95% bootstrap confidence intervals for PR-AUC, recall, precision and the
+  tuned-vs-default cost difference (`confidence_intervals_95`).
+- Calibration analysis: Brier score in `metrics.json` and
+  `reports/calibration.png`.
+- MIT license, pre-commit hooks, Dependabot.
+
+### Fixed
+- `metrics.json` ends with a newline.
+
 ## [0.2.0] — 2026-10-24
 
 ### Fixed
