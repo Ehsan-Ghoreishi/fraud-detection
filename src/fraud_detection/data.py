@@ -27,8 +27,13 @@ def generate_transactions(n: int = 60_000, fraud_rate: float = 0.017,
     fraud_rate : proportion of fraudulent transactions (real card fraud is ~1-2%)
     seed : random seed for reproducibility
     """
+    if n < 2:
+        raise ValueError(f"n must be at least 2, got {n}")
+    if not 0 < fraud_rate < 1:
+        raise ValueError(f"fraud_rate must be in (0, 1), got {fraud_rate}")
+
     rng = np.random.default_rng(seed)
-    n_fraud = int(n * fraud_rate)
+    n_fraud = max(1, int(n * fraud_rate))
     n_legit = n - n_fraud
 
     # ---- Legitimate transactions -------------------------------------------
@@ -73,9 +78,8 @@ def generate_transactions(n: int = 60_000, fraud_rate: float = 0.017,
     # shuffle so fraud isn't all at the bottom
     df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
 
-    # clip a couple of columns to sane ranges
+    # card schemes have a minimum charge; drop implausible micro-amounts
     df["amount"] = df["amount"].clip(0.5, None)
-    df["txn_count_1h"] = df["txn_count_1h"].clip(0, None)
     return df
 
 
