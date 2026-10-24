@@ -59,6 +59,26 @@ def make_all(out: dict, reports_dir: Path = REPORTS) -> None:
                              reports_dir / "recall_by_typology.png")
 
 
+def make_ieee(out: dict, reports_dir: Path) -> None:
+    """Report figures for the IEEE-CIS track."""
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    summary, cost = out["summary"], out["summary"]["business_cost"]
+    plot_pr_curve(out["y_test"], out["proba"], reports_dir / "pr_curve.png")
+    plot_confusion(out["y_test"], out["proba"], out["threshold"],
+                   reports_dir / "confusion_matrix.png")
+    plot_cost_curve(out["train"], out["test"], out["threshold"],
+                    cost["chargeback_fee"], cost["cost_false_positive"],
+                    reports_dir / "cost_curve.png",
+                    threshold_cv=out["threshold_cv"])
+    plot_feature_importance(summary["feature_family_importance"],
+                            reports_dir / "feature_family_importance.png",
+                            title="Fraud Signals by Feature Family")
+    plot_calibration(out["y_test"], out["proba"], reports_dir / "calibration.png")
+    plot_typology_recall(summary["recall_by_product"],
+                         reports_dir / "recall_by_product.png",
+                         title="Recall by Product (test set)")
+
+
 def main():
     make_all(train_and_evaluate())
     log.info("\nFigures written to reports/")
@@ -142,7 +162,9 @@ def plot_cost_curve(train, test, threshold, chargeback_fee, cost_fp,
     plt.close(fig)
 
 
-def plot_typology_recall(recall_by_typology: dict, path: Path) -> None:
+def plot_typology_recall(recall_by_typology: dict, path: Path,
+                         title: str = "Recall by Fraud Typology (test set)"
+                         ) -> None:
     """Share of each fraud typology caught at the chosen threshold."""
     names = list(recall_by_typology)
     recall = [recall_by_typology[n]["recall"] * 100 for n in names]
@@ -155,13 +177,14 @@ def plot_typology_recall(recall_by_typology: dict, path: Path) -> None:
                 f"{r:.0f}%  (n={n})", va="center", fontsize=9)
     ax.set_xlim(0, 115)
     ax.set_xlabel("Fraud transactions caught (%)")
-    ax.set_title("Recall by Fraud Typology (test set)")
+    ax.set_title(title)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
 
 
-def plot_feature_importance(feature_importance: list[dict], path: Path) -> None:
+def plot_feature_importance(feature_importance: list[dict], path: Path,
+                            title: str = "Top Fraud Signals") -> None:
     if not feature_importance:
         return
     fi = feature_importance[:8][::-1]
@@ -170,7 +193,7 @@ def plot_feature_importance(feature_importance: list[dict], path: Path) -> None:
     fig, ax = plt.subplots(figsize=(6.5, 4.5))
     ax.barh(names, vals, color=NAVY)
     ax.set_xlabel("Drop in PR-AUC when shuffled")
-    ax.set_title("Top Fraud Signals")
+    ax.set_title(title)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)

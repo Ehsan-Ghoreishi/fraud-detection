@@ -1,7 +1,7 @@
 PYTHON ?= python
 CLI := $(PYTHON) -m fraud_detection
 
-.PHONY: install data eda train all test lint clean
+.PHONY: install data eda train all ieee test lint clean
 
 install:  ## install the package with dev tools
 	$(PYTHON) -m pip install -e ".[dev]"
@@ -15,7 +15,11 @@ eda: data  ## exploratory figure and summary
 train: data  ## select, tune, evaluate, save model and figures
 	$(CLI) train
 
-all: eda train  ## reproduce every artefact in reports/
+all: eda train  ## reproduce every artefact in reports/ (simulated track)
+
+ieee:  ## real IEEE-CIS track (needs a Kaggle token, see README)
+	$(CLI) ieee-download
+	$(CLI) ieee-train
 
 test:
 	$(PYTHON) -m pytest

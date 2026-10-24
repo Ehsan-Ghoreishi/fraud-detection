@@ -60,6 +60,26 @@ def _score(args) -> None:
              f"{len(scored):,}", f"{scored.flag.sum():,}", args.output)
 
 
+def _ieee_download(args) -> None:
+    from fraud_detection.ieee.data import download
+
+    for path in download(args.src):
+        log.info("Ready: %s", path)
+
+
+def _ieee_train(args) -> None:
+    from fraud_detection.ieee.pipeline import train_and_evaluate_ieee
+    from fraud_detection.plots import make_ieee
+
+    out = train_and_evaluate_ieee(
+        src=args.src, reports_dir=args.reports,
+        chargeback_fee=args.chargeback_fee, cost_fp=args.cost_fp,
+        cv_folds=args.cv_folds, test_start=args.test_start,
+        label_delay_days=args.label_delay_days, models=args.models)
+    make_ieee(out, args.reports)
+    log.info("IEEE-CIS reports written to %s", args.reports)
+
+
 def build_parser() -> argparse.ArgumentParser:
     from fraud_detection.scoring import MODEL_PATH
 
@@ -113,6 +133,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-plots", dest="plots", action="store_false",
                    help="skip writing report figures")
     p.set_defaults(func=_train)
+
+    from fraud_detection.ieee.data import IEEE_DIR
+    from fraud_detection.ieee.pipeline import IEEE_REPORTS, IEEE_TEST_START
+
+    p = sub.add_parser("ieee-download",
+                       help="download the real IEEE-CIS data (Kaggle API)")
+    p.add_argument("--src", type=Path, default=IEEE_DIR)
+    p.set_defaults(func=_ieee_download)
+
+    p = sub.add_parser("ieee-train",
+                       help="run the evaluation protocol on IEEE-CIS")
+    p.add_argument("--src", type=Path, default=IEEE_DIR)
+    p.add_argument("--reports", type=Path, default=IEEE_REPORTS)
+    p.add_argument("--chargeback-fee", type=float, default=config.CHARGEBACK_FEE)
+    p.add_argument("--cost-fp", type=float, default=config.COST_FALSE_POSITIVE)
+    p.add_argument("--cv-folds", type=int, default=config.CV_FOLDS)
+    p.add_argument("--test-start", default=IEEE_TEST_START)
+    p.add_argument("--label-delay-days", type=float,
+                   default=config.LABEL_DELAY_DAYS)
+    p.add_argument("--models", nargs="+", metavar="NAME")
+    p.set_defaults(func=_ieee_train)
 
     p = sub.add_parser("score", help="score a CSV with a saved model")
     p.add_argument("input", type=Path)

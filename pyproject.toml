@@ -20,6 +20,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6", "pre-commit>=3"]
+ieee = ["kaggle>=1.6"]
 
 [project.scripts]
 fraud-detection = "fraud_detection.cli:main"

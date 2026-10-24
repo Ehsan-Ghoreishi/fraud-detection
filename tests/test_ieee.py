@@ -95,3 +95,17 @@ def test_pipeline_end_to_end_on_ieee_schema(raw, tmp_path):
         "customer behaviour (ours)", "Vesta engineered (V)"}
     assert (tmp_path / "sample_alerts.csv").exists()
     assert out["train"].timestamp.max() < out["test"].timestamp.min()
+
+
+def test_ieee_figures_are_written(raw, tmp_path):
+    from fraud_detection.plots import make_ieee
+
+    out = train_and_evaluate_ieee(
+        data=raw, reports_dir=None, test_start=None, cv_folds=3,
+        label_delay_days=5, importance_sample=1_000,
+        models=["gradient_boosting"])
+    make_ieee(out, tmp_path)
+    assert {p.name for p in tmp_path.iterdir()} == {
+        "pr_curve.png", "confusion_matrix.png", "cost_curve.png",
+        "feature_family_importance.png", "calibration.png",
+        "recall_by_product.png"}
