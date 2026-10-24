@@ -101,7 +101,7 @@ def _nighttime_distribution() -> np.ndarray:
 
 if __name__ == "__main__":
     from pathlib import Path
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[2]
     (root / "data").mkdir(exist_ok=True)
     df = generate_transactions()
     df.to_csv(root / "data" / "transactions.csv", index=False)

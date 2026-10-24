@@ -14,9 +14,9 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from sklearn.metrics import precision_recall_curve, confusion_matrix
 
-from fraud_model import train_and_evaluate, choose_threshold
+from fraud_detection.model import train_and_evaluate, choose_threshold
 
-REPORTS = Path(__file__).resolve().parent.parent / "reports"
+REPORTS = Path(__file__).resolve().parents[2] / "reports"
 NAVY = "#1F3864"
 ACCENT = "#2E86AB"
 RED = "#C0392B"

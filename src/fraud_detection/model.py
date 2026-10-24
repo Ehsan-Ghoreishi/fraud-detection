@@ -36,7 +36,7 @@ from sklearn.metrics import (
     average_precision_score, precision_recall_curve, roc_curve,
 )
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 DATA_PATH = ROOT / "data" / "transactions.csv"
 REPORTS = ROOT / "reports"
 
