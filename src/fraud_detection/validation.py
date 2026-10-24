@@ -50,7 +50,8 @@ def apply_label_delay(train: pd.DataFrame, cut: pd.Timestamp,
 
 
 def forward_chaining_oof(model, X: pd.DataFrame, y: pd.Series,
-                         n_splits: int = 4, gap: int = 0) -> np.ndarray:
+                         n_splits: int = 4, gap: int = 0,
+                         return_folds: bool = False):
     """Out-of-fold probabilities where each fold is trained on the past only.
 
     Rows must be in time order. ``gap`` rows between each training window
@@ -58,12 +59,17 @@ def forward_chaining_oof(model, X: pd.DataFrame, y: pd.Series,
     The first chunk is never predicted (there is nothing earlier to train
     on), so its entries are NaN — as are folds whose training window
     contains no fraud yet.
+
+    With ``return_folds`` also returns, per row, the index of the fold that
+    predicted it (0 = earliest, -1 = not predicted).
     """
     oof = np.full(len(X), np.nan)
-    for train_idx, val_idx in TimeSeriesSplit(n_splits=n_splits,
-                                              gap=gap).split(X):
+    folds = np.full(len(X), -1)
+    splits = TimeSeriesSplit(n_splits=n_splits, gap=gap).split(X)
+    for k, (train_idx, val_idx) in enumerate(splits):
         if y.iloc[train_idx].nunique() < 2:
             continue
         fold = clone(model).fit(X.iloc[train_idx], y.iloc[train_idx])
         oof[val_idx] = fold.predict_proba(X.iloc[val_idx])[:, 1]
-    return oof
+        folds[val_idx] = k
+    return (oof, folds) if return_folds else oof

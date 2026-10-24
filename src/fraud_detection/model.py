@@ -46,6 +46,7 @@ from fraud_detection.config import (
     RANDOM_STATE,
     REPORTS,
     TEST_START,
+    THRESHOLD_FOLDS,
 )
 from fraud_detection.data import load_transactions
 from fraud_detection.evaluation import (
@@ -77,6 +78,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
                        cv_folds: int = CV_FOLDS,
                        test_start: str | None = TEST_START,
                        label_delay_days: float = LABEL_DELAY_DAYS,
+                       threshold_folds: int = THRESHOLD_FOLDS,
                        models: list[str] | None = None,
                        random_state: int = RANDOM_STATE) -> dict:
     """Select a model, tune its threshold and evaluate it out of time.
@@ -113,10 +115,10 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     candidates = build_models(random_state)
     if models:
         candidates = {k: candidates[k] for k in models}
-    results, oof = {}, {}
+    results, oof, folds = {}, {}, {}
     for name, model in candidates.items():
-        oof[name] = forward_chaining_oof(model, X_train, y_train, cv_folds,
-                                         gap=cv_gap)
+        oof[name], folds[name] = forward_chaining_oof(
+            model, X_train, y_train, cv_folds, gap=cv_gap, return_folds=True)
         seen = ~np.isnan(oof[name])
         pr_auc = average_precision_score(y_train[seen], oof[name][seen])
         roc_auc = roc_auc_score(y_train[seen], oof[name][seen])
@@ -127,11 +129,20 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     log.info(f"\nBest model by CV PR-AUC: {best_name}")
 
     # ---- cost-based threshold, tuned on the same out-of-fold predictions ---
-    seen = ~np.isnan(oof[best_name])
+    # Early folds are trained on little history and score differently from
+    # the final model, so only the most recent folds set the threshold.
     fn_cost_train = train["amount"].to_numpy() + chargeback_fee
-    threshold, _ = choose_threshold(y_train[seen], oof[best_name][seen],
-                                    cost_fn=fn_cost_train[seen], cost_fp=cost_fp)
-    log.info(f"Cost-optimal threshold: {threshold:.2f}")
+    recent = folds[best_name] >= cv_folds - threshold_folds
+    if not y_train[recent].any():           # too little fraud: use all folds
+        recent = folds[best_name] >= 0
+    threshold, _ = choose_threshold(y_train[recent], oof[best_name][recent],
+                                    cost_fn=fn_cost_train[recent], cost_fp=cost_fp)
+    seen = folds[best_name] >= 0
+    threshold_all_folds, _ = choose_threshold(
+        y_train[seen], oof[best_name][seen], cost_fn=fn_cost_train[seen],
+        cost_fp=cost_fp)
+    log.info(f"Cost-optimal threshold: {threshold:.3f} (last {threshold_folds} "
+             f"folds; all folds would give {threshold_all_folds:.3f})")
 
     # ---- refit on all training data, evaluate once on the future -----------
     best_model = candidates[best_name].fit(X_train, y_train)
@@ -157,9 +168,16 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
                        thresholds=[threshold, 0.5])["cost"]
     cost_at_threshold, cost_at_default = map(float, costs)
     no_model_cost = float(fn_cost_test[y_test.to_numpy() == 1].sum())
-    log.info(f"Test cost €{cost_at_threshold:,.0f} at {threshold:.2f} "
+    # regret: how much a perfectly hindsight-tuned threshold would have saved
+    oracle_threshold, oracle_table = choose_threshold(y_test, proba,
+                                                      fn_cost_test, cost_fp)
+    oracle_cost = float(oracle_table["cost"].min())
+    all_folds_cost = float(cost_curve(y_test, proba, fn_cost_test, cost_fp,
+                                      thresholds=[threshold_all_folds])["cost"][0])
+    log.info(f"Test cost €{cost_at_threshold:,.0f} at {threshold:.3f} "
              f"(€{cost_at_default:,.0f} at 0.50, €{no_model_cost:,.0f} "
-             "with no model)")
+             f"with no model) | regret vs hindsight-optimal {oracle_threshold:.3f}: "
+             f"€{cost_at_threshold - oracle_cost:,.0f}")
 
     # resample whole customers: a fraud burst on one card is one event
     ci = bootstrap_ci(y_test, proba, threshold, fn_cost_test, cost_fp,
@@ -178,7 +196,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
         },
         "models": results,
         "best_model": best_name,
-        "cost_optimal_threshold": round(threshold, 3),
+        "cost_optimal_threshold": round(threshold, 4),
         "recall_fraud": round(recall, 3),
         "precision_fraud": round(precision, 3),
         "value_recall": round(caught_value, 3),
@@ -193,6 +211,12 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
             "test_cost_at_default_0_5": cost_at_default,
             "test_cost_without_model": no_model_cost,
             "test_savings_vs_no_model": no_model_cost - cost_at_threshold,
+            "threshold_tuned_on_folds": threshold_folds,
+            "threshold_all_folds": threshold_all_folds,
+            "test_cost_at_threshold_all_folds": all_folds_cost,
+            "test_oracle_threshold": oracle_threshold,
+            "test_cost_at_oracle": oracle_cost,
+            "threshold_regret": cost_at_threshold - oracle_cost,
         },
         "confidence_intervals_95": ci,
     }

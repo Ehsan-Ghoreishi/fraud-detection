@@ -41,6 +41,13 @@ def test_breakdowns_cover_typologies_and_months(trained):
     assert 0 <= hidden["flagged"] <= hidden["transactions"]
 
 
+def test_threshold_regret_is_measured(trained):
+    cost = trained[0]["summary"]["business_cost"]
+    # the hindsight-optimal threshold can never be beaten on its own data
+    assert cost["test_cost_at_oracle"] <= cost["test_cost_at_threshold"]
+    assert cost["threshold_regret"] >= 0
+
+
 def test_episode_metrics_are_reported(trained):
     out, _ = trained
     ep = out["summary"]["episodes"]

@@ -35,6 +35,7 @@ def _train(args) -> None:
                              cost_fp=args.cost_fp, cv_folds=args.cv_folds,
                              test_start=args.test_start,
                              label_delay_days=args.label_delay_days,
+                             threshold_folds=args.threshold_folds,
                              models=args.models)
     path = save_model(out["model"], out["threshold"],
                       metadata={"best_model": out["summary"]["best_model"],
@@ -104,6 +105,9 @@ def build_parser() -> argparse.ArgumentParser:
                    default=config.LABEL_DELAY_DAYS,
                    help="days before --test-start whose labels are not yet "
                         "known (default: %(default)s)")
+    p.add_argument("--threshold-folds", type=int,
+                   default=config.THRESHOLD_FOLDS,
+                   help="tune the threshold on this many most recent CV folds")
     p.add_argument("--models", nargs="+", metavar="NAME",
                    help="restrict candidates, e.g. gradient_boosting")
     p.add_argument("--no-plots", dest="plots", action="store_false",

@@ -17,6 +17,9 @@ CV_FOLDS = 4
 # fraud labels (chargebacks, customer reports) arrive with a delay: at
 # deployment the most recent weeks cannot be used for training yet
 LABEL_DELAY_DAYS = 14
+# the threshold is tuned on the most recent CV folds only: their models saw
+# the most history, so their scores are closest to the final model's
+THRESHOLD_FOLDS = 2
 
 # Business cost assumptions (euros). These are the lever a risk team tunes.
 # A missed fraud costs the transaction amount plus a chargeback handling fee;

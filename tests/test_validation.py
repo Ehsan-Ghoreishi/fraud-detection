@@ -89,3 +89,13 @@ def test_forward_chaining_gap_separates_train_and_validation():
     predicted = ~np.isnan(oof)
     # every validation row is at least 10 rows after anything trained on
     assert (df.x[predicted] - oof[predicted] * 1000 > 10).all()
+
+
+def test_forward_chaining_reports_fold_of_each_prediction():
+    df = _frame(100)
+    oof, folds = forward_chaining_oof(_RecordsTrainingRange(), df[["x"]],
+                                      df["y"], n_splits=4, return_folds=True)
+    assert (folds[:20] == -1).all()
+    assert folds[20:].tolist() == sorted(folds[20:].tolist())
+    assert set(folds[20:]) == {0, 1, 2, 3}
+    assert np.isnan(oof[folds == -1]).all()
