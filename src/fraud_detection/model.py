@@ -26,16 +26,13 @@ import json
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
 from sklearn.metrics import (
     classification_report, confusion_matrix, roc_auc_score,
     average_precision_score, precision_recall_curve, roc_curve,
 )
 
-from fraud_detection.features import FEATURES, FraudFeatures
+from fraud_detection.features import FEATURES
+from fraud_detection.models import build_models
 from fraud_detection.config import (
     COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, DATA_PATH, RANDOM_STATE, REPORTS,
 )
@@ -54,22 +51,7 @@ def train_and_evaluate() -> dict:
     )
 
     results = {}
-    models = {
-        "logistic_regression": Pipeline([
-            ("features", FraudFeatures()),
-            ("scaler", StandardScaler()),
-            ("clf", LogisticRegression(max_iter=1000,
-                                       class_weight="balanced",
-                                       random_state=RANDOM_STATE)),
-        ]),
-        "random_forest": Pipeline([
-            ("features", FraudFeatures()),
-            ("clf", RandomForestClassifier(
-                n_estimators=300, max_depth=12, min_samples_leaf=20,
-                class_weight="balanced", n_jobs=-1, random_state=RANDOM_STATE
-            )),
-        ]),
-    }
+    models = build_models()
 
     best_name, best_pr_auc = None, -1.0
     for name, model in models.items():
