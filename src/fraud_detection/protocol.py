@@ -86,14 +86,22 @@ def select_model(candidates: dict, X_train, y_train, cv_folds: int,
     ``folds[name]`` are per-row out-of-fold scores and fold indices.
     """
     results, oof, folds = {}, {}, {}
+    y = np.asarray(y_train)
     for name, model in candidates.items():
         oof[name], folds[name] = forward_chaining_oof(
             model, X_train, y_train, cv_folds, gap=gap, return_folds=True)
-        seen = ~np.isnan(oof[name])
-        pr_auc = average_precision_score(y_train[seen], oof[name][seen])
-        roc_auc = roc_auc_score(y_train[seen], oof[name][seen])
+        # Scored per fold and averaged: each fold model scores on its own
+        # scale, so pooling their predictions into one ranking would mix
+        # scales and make the metric depend on fold boundaries.
+        per_fold = [(average_precision_score(y[f], oof[name][f]),
+                     roc_auc_score(y[f], oof[name][f]))
+                    for f in (folds[name] == k for k in range(cv_folds))
+                    if y[f].any() and not y[f].all()]
+        pr_auc, roc_auc = (float(np.mean(v)) for v in zip(*per_fold,
+                                                            strict=True))
         results[name] = {"cv_pr_auc": round(pr_auc, 4),
-                         "cv_roc_auc": round(roc_auc, 4)}
+                         "cv_roc_auc": round(roc_auc, 4),
+                         "cv_pr_auc_by_fold": [round(a, 4) for a, _ in per_fold]}
         log.info(f"{name:>22} | CV PR-AUC {pr_auc:.4f} | CV ROC-AUC {roc_auc:.4f}")
     best_name = max(results, key=lambda k: results[k]["cv_pr_auc"])
     log.info(f"\nBest model by CV PR-AUC: {best_name}")
