@@ -54,19 +54,33 @@ interaction whose amount cut-off is the *training* median.
 
 ## Results (test set, 15,000 transactions, 255 frauds)
 
-| Metric | Value |
-|---|---|
-| PR-AUC | 0.990 |
-| ROC-AUC | 0.9998 |
-| Recall | 97.6% (249 / 255) |
-| Precision | 84.1% |
-| Flagged traffic | 2.0% |
-| Threshold | 0.77 |
-| Cost at threshold / at 0.5 | €1,135 / €1,005 |
+| Metric | Value | 95% bootstrap CI |
+|---|---|---|
+| PR-AUC | 0.990 | 0.983 – 0.996 |
+| ROC-AUC | 0.9998 | |
+| Recall | 97.6% (249 / 255) | 95.7% – 99.2% |
+| Precision | 84.1% | 80.3% – 87.9% |
+| Flagged traffic | 2.0% | |
+| Threshold | 0.77 | |
+| Cost at threshold / at 0.5 | €1,135 / €1,005 | difference −€325 – +€655 |
+| Brier score | 0.0056 | |
 
-The tuned threshold does not beat 0.5 on this test sample; the cost curve is
-flat between ~0.5 and ~0.8 and the difference is within the noise of ~250
-positive cases. Source of truth: `reports/metrics.json`.
+Intervals come from 1,000 class-stratified bootstrap resamples of the test
+set. The cost-difference interval spans zero: on this sample the tuned
+threshold and the default 0.5 are statistically indistinguishable, because
+the cost curve is flat between ~0.5 and ~0.8. Source of truth:
+`reports/metrics.json`.
+
+## Calibration
+
+![Calibration](../reports/calibration.png)
+
+`class_weight="balanced"` makes the model over-predict: scores between 0.2
+and 0.85 correspond to observed fraud rates of only 0–10%. Ranking (PR-AUC)
+and the cost-tuned flag are unaffected, but the raw output is a **score, not
+a probability**. If calibrated probabilities are needed (e.g. for expected
+loss reporting), wrap the pipeline in `CalibratedClassifierCV` and re-tune
+the threshold.
 
 ## Explainability
 
@@ -84,7 +98,7 @@ coefficients are also directly inspectable on the saved pipeline.
 - **No fairness assessment**: there are no customer attributes in the data.
   On real data, flag rates should be checked across customer segments,
   and features such as `foreign_country` reviewed for disparate impact.
-- **Calibration** has not been assessed; treat probabilities as scores.
+- **Probabilities are not calibrated** (see above).
 
 ## Maintenance
 
