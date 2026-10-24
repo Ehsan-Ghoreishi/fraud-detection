@@ -47,10 +47,20 @@ def test_perfect_separation_has_zero_cost():
 
 
 def test_ties_resolve_to_lowest_threshold():
+    from fraud_detection.evaluation import DEFAULT_THRESHOLDS
+
     y = np.array([0, 1])
     proba = np.array([0.0, 1.0])
     threshold, _ = choose_threshold(y, proba, cost_fn=150)
-    assert threshold == 0.01
+    assert threshold == DEFAULT_THRESHOLDS.min() == 0.001
+
+
+def test_default_grid_is_fine_at_low_scores():
+    from fraud_detection.evaluation import DEFAULT_THRESHOLDS
+
+    low = DEFAULT_THRESHOLDS[DEFAULT_THRESHOLDS < 0.05]
+    assert len(low) >= 25
+    assert np.all(np.diff(DEFAULT_THRESHOLDS) > 0)
 
 
 def test_bootstrap_ci_brackets_point_estimate():

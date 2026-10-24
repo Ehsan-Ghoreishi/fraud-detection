@@ -13,7 +13,10 @@ from sklearn.metrics import average_precision_score
 
 from fraud_detection.config import COST_FALSE_POSITIVE
 
-DEFAULT_THRESHOLDS = np.round(np.linspace(0.01, 0.99, 99), 2)
+# Fine (log-spaced) at low scores, where cost-optimal thresholds for rare
+# fraud usually lie, and 0.01 steps above 0.05.
+DEFAULT_THRESHOLDS = np.unique(np.round(np.r_[
+    np.geomspace(0.001, 0.05, 30), np.linspace(0.05, 0.99, 95)], 4))
 
 
 def _per_txn(cost, n: int) -> np.ndarray:
