@@ -6,6 +6,12 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
+# raw transaction attributes the pipeline expects as input
+RAW_COLUMNS = [
+    "amount", "hour", "days_since_last_txn", "txn_count_1h", "new_device",
+    "foreign_country", "distance_from_home", "merchant_risk",
+]
+
 # hours (inclusive) treated as "night", when legitimate activity is rare
 NIGHT_HOURS = (0, 5)
 

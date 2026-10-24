@@ -36,7 +36,7 @@ from sklearn.metrics import (
     average_precision_score,
 )
 
-from fraud_detection.features import FEATURES
+from fraud_detection.features import FEATURES, RAW_COLUMNS
 from fraud_detection.evaluation import choose_threshold, cost_curve
 from fraud_detection.models import build_models
 from fraud_detection.config import (
@@ -63,7 +63,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     Set ``reports_dir=None`` to skip writing metrics.json.
     """
     df = pd.read_csv(data_path) if data is None else data
-    X, y = df.drop(columns="is_fraud"), df["is_fraud"]
+    X, y = df[RAW_COLUMNS], df["is_fraud"]
 
     # stratified split preserves the fraud ratio in both sets
     X_train, X_test, y_train, y_test = train_test_split(
