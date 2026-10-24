@@ -20,6 +20,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
 
+[project.scripts]
+fraud-detection = "fraud_detection.cli:main"
+
 [tool.setuptools.dynamic]
 version = { attr = "fraud_detection.__version__" }
 
