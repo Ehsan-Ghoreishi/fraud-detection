@@ -23,6 +23,7 @@ demonstrates deliberately):
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pandas as pd
@@ -42,6 +43,8 @@ from fraud_detection.config import (
     COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, CV_FOLDS, DATA_PATH, RANDOM_STATE,
     REPORTS, TEST_SIZE,
 )
+
+log = logging.getLogger(__name__)
 
 
 # --------------------------------------------------------------------------- #
@@ -87,7 +90,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
             "cv_roc_auc": round(roc_auc, 4),
             "cv_pr_auc": round(pr_auc, 4),
         }
-        print(f"{name:>22} | CV ROC-AUC {roc_auc:.4f} | CV PR-AUC {pr_auc:.4f}")
+        log.info(f"{name:>22} | CV ROC-AUC {roc_auc:.4f} | CV PR-AUC {pr_auc:.4f}")
 
         if pr_auc > best_pr_auc:
             best_name, best_pr_auc = name, pr_auc
@@ -98,7 +101,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     results[best_name]["test_pr_auc"] = round(
         average_precision_score(y_test, best_proba), 4)
 
-    print(f"\nBest model by PR-AUC: {best_name}\n")
+    log.info(f"\nBest model by PR-AUC: {best_name}\n")
 
     # ---- cost-based threshold selection ------------------------------------
     # tuned on out-of-fold training predictions, then applied unchanged to
@@ -107,24 +110,24 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
                                     cost_fn=cost_fn, cost_fp=cost_fp)
     preds = (best_proba >= threshold).astype(int)
 
-    print(f"Cost-optimal threshold: {threshold:.3f}")
-    print("\nClassification report at cost-optimal threshold:\n")
-    print(classification_report(y_test, preds, digits=3,
+    log.info(f"Cost-optimal threshold: {threshold:.3f}")
+    log.info("\nClassification report at cost-optimal threshold:\n")
+    log.info(classification_report(y_test, preds, digits=3,
                                 target_names=["legit", "fraud"]))
 
     cm = confusion_matrix(y_test, preds)
     tn, fp, fn, tp = cm.ravel()
     caught = tp / (tp + fn)
     review_rate = (tp + fp) / len(y_test)
-    print(f"Fraud caught (recall):     {caught:.1%}")
-    print(f"Transactions flagged:      {review_rate:.1%} of all traffic")
-    print(f"False alarms per real fraud: {fp / max(tp, 1):.1f}")
+    log.info(f"Fraud caught (recall):     {caught:.1%}")
+    log.info(f"Transactions flagged:      {review_rate:.1%} of all traffic")
+    log.info(f"False alarms per real fraud: {fp / max(tp, 1):.1f}")
 
     # what the threshold choice is worth, measured on unseen data
     test_costs = cost_curve(y_test, best_proba, cost_fn, cost_fp,
                             thresholds=[threshold, 0.5])["cost"]
     cost_at_threshold, cost_at_default = map(float, test_costs)
-    print(f"Test-set cost at {threshold:.2f}: €{cost_at_threshold:,.0f} "
+    log.info(f"Test-set cost at {threshold:.2f}: €{cost_at_threshold:,.0f} "
           f"(vs €{cost_at_default:,.0f} at 0.50)")
 
     # persist metrics for the README / reports
@@ -166,9 +169,9 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     if reports_dir is not None:
         reports_dir.mkdir(parents=True, exist_ok=True)
         (reports_dir / "metrics.json").write_text(json.dumps(summary, indent=2))
-    print("\nTop fraud signals the model relies on (permutation importance):")
+    log.info("\nTop fraud signals the model relies on (permutation importance):")
     for f, v in importances[:6]:
-        print(f"  {f:>24}: {v:.4f}")
+        log.info(f"  {f:>24}: {v:.4f}")
 
     return {"summary": summary, "model": best_model,
             "y_test": y_test, "proba": best_proba,
@@ -177,4 +180,5 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     train_and_evaluate()

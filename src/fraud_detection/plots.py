@@ -8,6 +8,7 @@ Generate the figures used in the README and any presentation:
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import matplotlib
@@ -23,6 +24,8 @@ from sklearn.metrics import (  # noqa: E402
 from fraud_detection.config import REPORTS  # noqa: E402
 from fraud_detection.evaluation import cost_curve  # noqa: E402
 from fraud_detection.model import train_and_evaluate  # noqa: E402
+
+log = logging.getLogger(__name__)
 
 NAVY = "#1F3864"
 ACCENT = "#2E86AB"
@@ -55,7 +58,7 @@ def make_all(out: dict, reports_dir: Path = REPORTS) -> None:
 
 def main():
     make_all(train_and_evaluate())
-    print("\nFigures written to reports/")
+    log.info("\nFigures written to reports/")
 
 
 def plot_pr_curve(y_test, proba, path: Path) -> None:
@@ -140,4 +143,5 @@ def plot_feature_importance(feature_importance: list[dict], path: Path) -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

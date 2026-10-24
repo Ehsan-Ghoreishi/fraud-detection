@@ -11,11 +11,16 @@ pipeline is built on domain-aware features a fraud/risk analyst would design.
 """
 
 from __future__ import annotations
+
+import logging
+
 import numpy as np
 import pandas as pd
 
 from fraud_detection.config import DATA_DIR, DATA_PATH, RANDOM_STATE
 
+
+log = logging.getLogger(__name__)
 
 def generate_transactions(n: int = 60_000, fraud_rate: float = 0.017,
                           seed: int = RANDOM_STATE) -> pd.DataFrame:
@@ -106,8 +111,9 @@ def _nighttime_distribution() -> np.ndarray:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     DATA_DIR.mkdir(exist_ok=True)
     df = generate_transactions()
     df.to_csv(DATA_PATH, index=False)
-    print(f"Generated {len(df):,} transactions "
+    log.info(f"Generated {len(df):,} transactions "
           f"({df.is_fraud.mean():.2%} fraud) -> data/transactions.csv")

@@ -9,6 +9,7 @@ never skips.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import matplotlib
@@ -21,6 +22,8 @@ import pandas as pd  # noqa: E402
 
 from fraud_detection.config import DATA_PATH, REPORTS  # noqa: E402
 from fraud_detection.features import NIGHT_HOURS  # noqa: E402
+
+log = logging.getLogger(__name__)
 
 NAVY = "#1F3864"
 RED = "#C0392B"
@@ -106,15 +109,16 @@ def main(data_path: Path = DATA_PATH, reports_dir: Path = REPORTS) -> None:
     df = pd.read_csv(data_path)
     reports_dir.mkdir(parents=True, exist_ok=True)
     plot_overview(df, reports_dir / "eda_overview.png")
-    print(f"EDA figure written to {reports_dir / 'eda_overview.png'}")
+    log.info(f"EDA figure written to {reports_dir / 'eda_overview.png'}")
 
-    print("\n--- Fraud vs Legit summary ---")
+    log.info("\n--- Fraud vs Legit summary ---")
     table = summarise(df)
     for name, row in table.iterrows():
         fmt = "€{:.0f}" if "amount" in name else "{:.1%}"
-        print(f"{name:<20} | legit {fmt.format(row.legit):>6} | "
+        log.info(f"{name:<20} | legit {fmt.format(row.legit):>6} | "
               f"fraud {fmt.format(row.fraud):>6}")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()
