@@ -174,6 +174,7 @@ def train_and_evaluate_ulb(data: pd.DataFrame | None = None,
         "business_cost": {**ev["business_cost"], "threshold_method": method,
                           "target_alert_rate": round(target_rate, 5)},
         "confidence_intervals_95": ev["confidence_intervals_95"],
+        "alert_budget": ev["alert_budget"],
         "feature_importance": [{"feature": f, "importance": round(float(v), 4)}
                                for f, v in importance],
     }

@@ -132,6 +132,7 @@ def train_and_evaluate_ieee(data: pd.DataFrame | None = None,
                           "threshold_tuned_on_folds": threshold_folds,
                           "target_alert_rate": round(target_rate, 5)},
         "confidence_intervals_95": ev["confidence_intervals_95"],
+        "alert_budget": ev["alert_budget"],
         "unseen_clients": unseen_client_metrics(
             test, proba, flagged, known=set(train["customer_id"])
             | set(embargo["customer_id"])),

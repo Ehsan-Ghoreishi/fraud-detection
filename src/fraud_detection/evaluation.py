@@ -137,6 +137,33 @@ def value_recall(y_true, flagged, amount) -> float:
         if total else float("nan")
 
 
+ALERT_BUDGETS = (0.005, 0.01, 0.02, 0.05)
+
+
+def alert_budget_table(y_true, proba, amount,
+                       rates=ALERT_BUDGETS) -> list[dict]:
+    """Recall and precision when only the top ``rate`` of scores is reviewed.
+
+    The cost-optimal threshold assumes unlimited review capacity; a real
+    team has a fixed number of analysts. This is the ranking read at fixed
+    alert budgets, so the model can be judged at the volume a team can
+    actually work.
+    """
+    y_true = np.asarray(y_true).astype(bool)
+    order = np.argsort(-np.asarray(proba, dtype=float), kind="stable")
+    rows = []
+    for rate in rates:
+        flagged = np.zeros(len(y_true), bool)
+        flagged[order[:max(int(round(rate * len(y_true))), 1)]] = True
+        rows.append({
+            "alert_rate": rate,
+            "recall": round(float(flagged[y_true].mean()), 3),
+            "precision": round(float(y_true[flagged].mean()), 3),
+            "value_recall": round(value_recall(y_true, flagged, amount), 3),
+        })
+    return rows
+
+
 def episode_metrics(df: pd.DataFrame, flagged) -> dict:
     """Detection measured per attack instead of per transaction.
 

@@ -26,6 +26,7 @@ from sklearn.metrics import (
 
 from fraud_detection.config import CV_MIN_TRAIN_FRACTION
 from fraud_detection.evaluation import (
+    alert_budget_table,
     bootstrap_ci,
     choose_threshold,
     cost_curve,
@@ -216,6 +217,13 @@ def evaluate_test(test: pd.DataFrame, proba, threshold: float,
     log.info("95%% CI  PR-AUC %s | recall %s | precision %s",
              ci["pr_auc"], ci["recall"], ci["precision"])
 
+    # the same ranking at the volumes a fixed-size review team can work
+    budget = alert_budget_table(y_test, proba, test["amount"])
+    for row in budget:
+        row["alerts_per_day"] = round(row["alert_rate"] * len(test) / test_days, 1)
+    log.info("At fixed alert budgets: %s", ", ".join(
+        f"{r['alert_rate']:.1%} -> recall {r['recall']:.1%}" for r in budget))
+
     return {
         "ranking": ranking,
         "operating_point": {
@@ -242,5 +250,6 @@ def evaluate_test(test: pd.DataFrame, proba, threshold: float,
             "threshold_regret": cost_at_threshold - oracle_cost,
         },
         "confidence_intervals_95": ci,
+        "alert_budget": budget,
         "flagged": flagged,
     }

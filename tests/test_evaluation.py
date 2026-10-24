@@ -168,3 +168,17 @@ def test_rate_matched_threshold_preserves_the_alert_rate():
     assert abs((final_scores >= t).mean() - 0.02) < 0.001
     with pytest.raises(ValueError):
         rate_matched_threshold(final_scores, 0.0)
+
+
+def test_alert_budget_reviews_only_the_top_scores():
+    from fraud_detection.evaluation import alert_budget_table
+
+    y = np.array([1, 0, 1, 0, 0, 0, 0, 0, 0, 1])
+    proba = np.array([0.9, 0.8, 0.7, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.05])
+    amount = np.array([100, 1, 300, 1, 1, 1, 1, 1, 1, 600])
+    small, large = alert_budget_table(y, proba, amount, rates=(0.1, 0.3))
+    assert (small["recall"], small["precision"]) == (round(1 / 3, 3), 1.0)
+    assert small["value_recall"] == 0.1
+    assert (large["recall"], large["precision"]) == (round(2 / 3, 3),
+                                                     round(2 / 3, 3))
+    assert large["value_recall"] == 0.4

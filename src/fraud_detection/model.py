@@ -140,6 +140,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
                                     "test_cost_at_oracle", "threshold_regret")},
         },
         "confidence_intervals_95": ev["confidence_intervals_95"],
+        "alert_budget": ev["alert_budget"],
     }
 
     # Explainability is non-negotiable in risk: permutation importance
