@@ -11,6 +11,8 @@ REPORTS = ROOT / "reports"
 MODELS_DIR = ROOT / "models"
 
 RANDOM_STATE = 42
+TEST_SIZE = 0.25
+CV_FOLDS = 5
 
 # Business cost assumptions (euros). These are the lever a risk team tunes.
 COST_FALSE_NEGATIVE = 150.0   # average loss from letting one fraud through

@@ -25,7 +25,9 @@ import json
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import (
+    StratifiedKFold, cross_val_predict, train_test_split,
+)
 from sklearn.metrics import (
     classification_report, confusion_matrix, roc_auc_score,
     average_precision_score, precision_recall_curve, roc_curve,
@@ -35,7 +37,8 @@ from fraud_detection.features import FEATURES
 from fraud_detection.evaluation import choose_threshold
 from fraud_detection.models import build_models
 from fraud_detection.config import (
-    COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, DATA_PATH, RANDOM_STATE, REPORTS,
+    COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, CV_FOLDS, DATA_PATH, RANDOM_STATE,
+    REPORTS, TEST_SIZE,
 )
 
 
@@ -48,29 +51,38 @@ def train_and_evaluate() -> dict:
 
     # stratified split preserves the fraud ratio in both sets
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.25, stratify=y, random_state=RANDOM_STATE
+        X, y, test_size=TEST_SIZE, stratify=y, random_state=RANDOM_STATE
     )
 
+    # Model selection uses out-of-fold predictions on the training set only;
+    # the test set is touched exactly once, by the final chosen model.
+    cv = StratifiedKFold(n_splits=CV_FOLDS, shuffle=True,
+                         random_state=RANDOM_STATE)
     results = {}
     models = build_models()
 
     best_name, best_pr_auc = None, -1.0
     for name, model in models.items():
-        model.fit(X_train, y_train)
-        proba = model.predict_proba(X_test)[:, 1]
+        oof_proba = cross_val_predict(model, X_train, y_train, cv=cv,
+                                      method="predict_proba")[:, 1]
 
-        roc_auc = roc_auc_score(y_test, proba)
-        pr_auc = average_precision_score(y_test, proba)   # key metric for imbalance
+        roc_auc = roc_auc_score(y_train, oof_proba)
+        pr_auc = average_precision_score(y_train, oof_proba)   # key metric for imbalance
 
         results[name] = {
-            "roc_auc": round(roc_auc, 4),
-            "pr_auc": round(pr_auc, 4),
+            "cv_roc_auc": round(roc_auc, 4),
+            "cv_pr_auc": round(pr_auc, 4),
         }
-        print(f"{name:>22} | ROC-AUC {roc_auc:.4f} | PR-AUC {pr_auc:.4f}")
+        print(f"{name:>22} | CV ROC-AUC {roc_auc:.4f} | CV PR-AUC {pr_auc:.4f}")
 
         if pr_auc > best_pr_auc:
             best_name, best_pr_auc = name, pr_auc
-            best_model, best_proba = model, proba
+
+    best_model = models[best_name].fit(X_train, y_train)
+    best_proba = best_model.predict_proba(X_test)[:, 1]
+    results[best_name]["test_roc_auc"] = round(roc_auc_score(y_test, best_proba), 4)
+    results[best_name]["test_pr_auc"] = round(
+        average_precision_score(y_test, best_proba), 4)
 
     print(f"\nBest model by PR-AUC: {best_name}\n")
 
