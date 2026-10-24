@@ -9,9 +9,11 @@ from fraud_detection.scoring import load_model, save_model, score
 
 
 @pytest.fixture(scope="module")
-def trained(small_df, tmp_path_factory):
+def trained(small_log, tmp_path_factory):
     reports = tmp_path_factory.mktemp("reports")
-    out = train_and_evaluate(data=small_df, reports_dir=reports, cv_folds=3)
+    out = train_and_evaluate(data=small_log, reports_dir=reports, cv_folds=3,
+                             test_start=None,
+                             models=["logistic_regression", "gradient_boosting"])
     return out, reports
 
 
@@ -32,36 +34,51 @@ def test_model_beats_random_ranking(trained):
     assert best["test_pr_auc"] > 5 * out["y_test"].mean()
 
 
-def test_threshold_is_tuned_on_training_data(trained):
+def test_evaluation_is_out_of_time(trained):
     out, _ = trained
-    assert len(out["oof_proba"]) == len(out["y_train"])
-    assert not set(out["y_train"].index) & set(out["y_test"].index)
+    train, test = out["train"], out["test"]
+    assert train.timestamp.max() < test.timestamp.min()
+    assert not set(train.transaction_id) & set(test.transaction_id)
+    # forward chaining: the earliest chunk has no out-of-fold prediction
+    assert train.oof_proba.isna().iloc[0]
+    assert train.oof_proba.notna().iloc[-1]
 
 
-def test_save_load_and_score_roundtrip(trained, small_df, tmp_path):
+def test_save_load_and_score_roundtrip(trained, small_log, tmp_path):
     out, _ = trained
     path = save_model(out["model"], out["threshold"], path=tmp_path / "m.joblib")
     bundle = load_model(path)
-    scored = score(small_df.head(50), bundle)
+    scored = score(small_log, bundle)
+    assert len(scored) == len(small_log)
     assert scored.fraud_probability.between(0, 1).all()
     expected = (scored.fraud_probability >= bundle["threshold"]).astype(int)
     # probabilities are rounded for output, so allow boundary disagreements
     assert (scored.flag == expected).mean() > 0.95
 
 
-def test_score_rejects_missing_columns(trained, small_df):
+def test_scores_match_training_pipeline(trained, small_log):
+    out, _ = trained
+    bundle = {"pipeline": out["model"], "threshold": out["threshold"]}
+    scored = score(small_log, bundle).set_index("transaction_id")
+    test = out["test"].set_index("transaction_id")
+    assert ((scored.loc[test.index, "fraud_probability"] - test.proba).abs()
+            < 1e-4).all()
+
+
+def test_score_rejects_missing_columns(trained, small_log):
     out, _ = trained
     bundle = {"pipeline": out["model"], "threshold": out["threshold"]}
     with pytest.raises(ValueError, match="merchant_risk"):
-        score(small_df.drop(columns="merchant_risk"), bundle)
+        score(small_log.drop(columns="merchant_risk"), bundle)
 
 
 def test_cli_end_to_end(tmp_path):
     data, reports, model = tmp_path / "t.csv", tmp_path / "r", tmp_path / "m.joblib"
-    cli(["-q", "generate", "--n", "3000", "--fraud-rate", "0.05",
-         "--data", str(data)])
+    cli(["-q", "generate", "--customers", "300", "--days", "60",
+         "--fraud-episode-rate", "0.1", "--data", str(data)])
     cli(["-q", "train", "--data", str(data), "--reports", str(reports),
-         "--model", str(model), "--cv-folds", "3"])
+         "--model", str(model), "--cv-folds", "3", "--test-start", "2026-02-10",
+         "--models", "logistic_regression"])
     cli(["-q", "score", str(data), "-o", str(tmp_path / "s.csv"),
          "--model", str(model)])
     assert {p.name for p in reports.iterdir()} == {

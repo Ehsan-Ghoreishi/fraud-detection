@@ -41,7 +41,7 @@ def test_threshold_moves_with_cost_assumptions():
 def test_perfect_separation_has_zero_cost():
     y = np.array([0, 0, 0, 1, 1])
     proba = np.array([0.1, 0.2, 0.3, 0.8, 0.9])
-    threshold, table = choose_threshold(y, proba)
+    threshold, table = choose_threshold(y, proba, cost_fn=150)
     assert table.cost.min() == 0
     assert 0.3 < threshold <= 0.8
 
@@ -49,7 +49,7 @@ def test_perfect_separation_has_zero_cost():
 def test_ties_resolve_to_lowest_threshold():
     y = np.array([0, 1])
     proba = np.array([0.0, 1.0])
-    threshold, _ = choose_threshold(y, proba)
+    threshold, _ = choose_threshold(y, proba, cost_fn=150)
     assert threshold == 0.01
 
 
@@ -57,12 +57,13 @@ def test_bootstrap_ci_brackets_point_estimate():
     rng = np.random.default_rng(2)
     y = np.r_[np.ones(100), np.zeros(1_900)]
     proba = np.clip(y * 0.4 + rng.random(2_000) * 0.6, 0, 1)
-    ci = bootstrap_ci(y, proba, threshold=0.5, n_boot=200)
+    ci = bootstrap_ci(y, proba, threshold=0.5, cost_fn=150, n_boot=200)
     recall = (proba[y == 1] >= 0.5).mean()
     assert ci["recall"][0] <= recall <= ci["recall"][1]
     assert set(ci) == {"pr_auc", "recall", "precision", "cost_vs_baseline"}
     # comparing a threshold with itself must give exactly zero difference
-    same = bootstrap_ci(y, proba, threshold=0.5, baseline_threshold=0.5,
+    same = bootstrap_ci(y, proba, threshold=0.5, cost_fn=150,
+                        baseline_threshold=0.5,
                         n_boot=50)
     assert same["cost_vs_baseline"] == [0.0, 0.0]
 

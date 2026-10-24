@@ -47,13 +47,15 @@ def make_all(out: dict, reports_dir: Path = REPORTS) -> None:
     plot_pr_curve(out["y_test"], out["proba"], reports_dir / "pr_curve.png")
     plot_confusion(out["y_test"], out["proba"], out["threshold"],
                    reports_dir / "confusion_matrix.png")
-    plot_cost_curve(out["y_train"], out["oof_proba"],
-                    out["y_test"], out["proba"], out["threshold"],
-                    cost["cost_false_negative"], cost["cost_false_positive"],
+    plot_cost_curve(out["train"], out["test"], out["threshold"],
+                    cost["chargeback_fee"], cost["cost_false_positive"],
                     reports_dir / "cost_curve.png")
     plot_feature_importance(summary.get("feature_importance", []),
                             reports_dir / "feature_importance.png")
     plot_calibration(out["y_test"], out["proba"], reports_dir / "calibration.png")
+    if "recall_by_typology" in summary:
+        plot_typology_recall(summary["recall_by_typology"],
+                             reports_dir / "recall_by_typology.png")
 
 
 def main():
@@ -105,16 +107,24 @@ def plot_confusion(y_test, proba, threshold, path: Path) -> None:
     plt.close(fig)
 
 
-def plot_cost_curve(y_train, oof_proba, y_test, proba, threshold,
-                    cost_fn, cost_fp, path: Path) -> None:
-    """Cost per 1,000 transactions on CV (where tuned) and test data."""
-    cv_table = cost_curve(y_train, oof_proba, cost_fn, cost_fp)
-    test_table = cost_curve(y_test, proba, cost_fn, cost_fp)
+def plot_cost_curve(train, test, threshold, chargeback_fee, cost_fp,
+                    path: Path) -> None:
+    """Cost per 1,000 transactions on CV (where tuned) and test data.
+
+    ``train`` carries ``oof_proba`` (NaN where no fold predicted it) and
+    ``test`` carries ``proba``; a missed fraud costs amount + fee.
+    """
+    seen = train["oof_proba"].notna()
+    tr = train[seen]
+    cv_table = cost_curve(tr["is_fraud"], tr["oof_proba"],
+                          tr["amount"] + chargeback_fee, cost_fp)
+    test_table = cost_curve(test["is_fraud"], test["proba"],
+                            test["amount"] + chargeback_fee, cost_fp)
     fig, ax = plt.subplots(figsize=(6.5, 4.5))
-    ax.plot(cv_table["threshold"], cv_table["cost"] / len(y_train) * 1000,
+    ax.plot(cv_table["threshold"], cv_table["cost"] / len(tr) * 1000,
             color=ACCENT, lw=2.5, label="Train (out-of-fold) — used to tune")
-    ax.plot(test_table["threshold"], test_table["cost"] / len(y_test) * 1000,
-            color=NAVY, lw=1.5, alpha=0.7, label="Test (held out)")
+    ax.plot(test_table["threshold"], test_table["cost"] / len(test) * 1000,
+            color=NAVY, lw=1.5, alpha=0.7, label="Test (out of time)")
     ax.axvline(threshold, color=RED, ls="--", lw=1.5,
                label=f"Chosen = {threshold:.2f}")
     ax.axvline(0.5, color="gray", ls=":", lw=1.5, label="Default = 0.50")
@@ -122,6 +132,25 @@ def plot_cost_curve(y_train, oof_proba, y_test, proba, threshold,
     ax.set_ylabel("Expected cost per 1,000 txns (€)")
     ax.set_title("Business Cost vs Decision Threshold")
     ax.legend(loc="upper center", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+
+
+def plot_typology_recall(recall_by_typology: dict, path: Path) -> None:
+    """Share of each fraud typology caught at the chosen threshold."""
+    names = list(recall_by_typology)
+    recall = [recall_by_typology[n]["recall"] * 100 for n in names]
+    counts = [recall_by_typology[n]["transactions"] for n in names]
+    fig, ax = plt.subplots(figsize=(6.5, 4.2))
+    bars = ax.barh([n.replace("_", " ") for n in names][::-1], recall[::-1],
+                   color=NAVY)
+    for bar, r, n in zip(bars, recall[::-1], counts[::-1], strict=True):
+        ax.text(bar.get_width() + 1, bar.get_y() + bar.get_height() / 2,
+                f"{r:.0f}%  (n={n})", va="center", fontsize=9)
+    ax.set_xlim(0, 115)
+    ax.set_xlabel("Fraud transactions caught (%)")
+    ax.set_title("Recall by Fraud Typology (test set)")
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)

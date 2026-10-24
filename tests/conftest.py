@@ -1,9 +1,13 @@
 import pytest
 
-from fraud_detection.data import generate_transactions
+from fraud_detection.simulation import SimulationConfig, simulate_transactions
+
+# small enough for a fast suite, large enough that every typology appears in
+# both the training and the out-of-time test period
+SMALL = SimulationConfig(n_customers=500, days=90, fraud_episode_rate=0.08,
+                         drift_from_day=60)
 
 
 @pytest.fixture(scope="session")
-def small_df():
-    """A small but non-trivial dataset that keeps the suite fast."""
-    return generate_transactions(n=4_000, fraud_rate=0.05, seed=0)
+def small_log():
+    return simulate_transactions(SMALL, seed=0)

@@ -1,4 +1,15 @@
-"""Domain-driven feature engineering for card transactions."""
+"""Feature engineering for card transactions.
+
+Two layers, mirroring how fraud features are served in production:
+
+1. :func:`add_behavioural_features` — point-in-time customer history
+   (velocity, spend vs. the customer's own norm, device age). Computed once
+   over the time-ordered log; each row only sees earlier transactions.
+2. :class:`FraudFeatures` — a stateless-per-row sklearn transformer that
+   turns one enriched transaction into the model matrix. Anything it
+   *learns* (category spend medians) is learned in ``fit``, i.e. on
+   training data only.
+"""
 
 from __future__ import annotations
 
@@ -6,73 +17,10 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
-# raw transaction attributes the pipeline expects as input
-RAW_COLUMNS = [
-    "amount", "hour", "days_since_last_txn", "txn_count_1h", "new_device",
-    "foreign_country", "distance_from_home", "merchant_risk",
-]
+from fraud_detection.simulation import CATEGORIES
 
 # hours (inclusive) treated as "night", when legitimate activity is rare
 NIGHT_HOURS = (0, 5)
-
-FEATURES = [
-    "log_amount", "hour", "is_night", "days_since_last_txn",
-    "txn_count_1h", "high_velocity", "new_device", "foreign_country",
-    "distance_from_home", "geo_risk", "merchant_risk",
-    "device_geo_amount_risk",
-]
-
-
-def engineer_features(df: pd.DataFrame,
-                      high_amount_log: float | None = None) -> pd.DataFrame:
-    """Add domain-driven features a fraud analyst would reach for.
-
-    ``high_amount_log`` is the log-amount above which a transaction counts
-    as "high value". It must be learned on training data only; when omitted
-    it falls back to the median of ``df`` (fine for EDA, leaky for models).
-    """
-    df = df.copy()
-
-    # log amount — fraud amounts are heavy-tailed; log stabilises them
-    df["log_amount"] = np.log1p(df["amount"])
-    if high_amount_log is None:
-        high_amount_log = float(df["log_amount"].median())
-
-    # "odd hour" flag — activity between midnight and 5am is higher risk
-    df["is_night"] = df["hour"].between(*NIGHT_HOURS).astype(int)
-
-    # velocity risk — many transactions in a short window is suspicious
-    df["high_velocity"] = (df["txn_count_1h"] >= 3).astype(int)
-
-    # geo risk — far from home OR foreign is a classic fraud signal
-    df["geo_risk"] = ((df["distance_from_home"] > 100) |
-                      (df["foreign_country"] == 1)).astype(int)
-
-    # combined behavioural risk: new device on a foreign, high-value txn
-    df["device_geo_amount_risk"] = (
-        df["new_device"] * df["foreign_country"] *
-        (df["log_amount"] > high_amount_log).astype(int)
-    )
-    return df
-
-
-class FraudFeatures(BaseEstimator, TransformerMixin):
-    """sklearn transformer: raw transactions -> model feature matrix.
-
-    Learns the high-value amount cut-off during ``fit`` so that, inside a
-    Pipeline, no statistic is ever computed from evaluation data.
-    """
-
-    def fit(self, X: pd.DataFrame, y=None):
-        self.high_amount_log_ = float(np.log1p(X["amount"]).median())
-        return self
-
-    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        return engineer_features(X, self.high_amount_log_)[FEATURES]
-
-    def get_feature_names_out(self, input_features=None):
-        return np.asarray(FEATURES, dtype=object)
-
 
 # --------------------------------------------------------------------------- #
 # Behavioural features for the simulated transaction log
@@ -139,3 +87,64 @@ def add_behavioural_features(log: pd.DataFrame) -> pd.DataFrame:
         df.groupby(["customer_id", "merchant_category"]).cumcount() == 0
     ).astype(int)
     return df.sort_index()
+
+
+# columns of the enriched log that FraudFeatures consumes
+RAW_COLUMNS = [
+    "timestamp", "amount", "merchant_category", "merchant_risk", "channel",
+    "foreign_country", "distance_from_home", *BEHAVIOUR_COLUMNS,
+]
+
+FEATURES = [
+    "log_amount", "log_amount_vs_customer", "log_amount_vs_category",
+    "hour", "is_night", "is_online", "foreign_country", "log_distance",
+    "merchant_risk", "txn_count_1h", "txn_count_24h", "log_amount_sum_24h",
+    "small_txn_count_1h", "log_secs_since_last_txn", "log_prior_txn_count",
+    "log_device_age_days", "new_device", "new_category",
+    *[f"cat_{c}" for c in CATEGORIES],
+]
+
+
+class FraudFeatures(BaseEstimator, TransformerMixin):
+    """sklearn transformer: enriched transactions -> model feature matrix.
+
+    Learns the median amount per merchant category during ``fit`` so that,
+    inside a Pipeline, no statistic is ever computed from evaluation data.
+    """
+
+    def fit(self, X: pd.DataFrame, y=None):
+        self.category_median_ = X.groupby("merchant_category")["amount"]\
+            .median().to_dict()
+        self.global_median_ = float(X["amount"].median())
+        return self
+
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        hour = pd.to_datetime(X["timestamp"]).dt.hour
+        cat_median = X["merchant_category"].map(self.category_median_)\
+            .fillna(self.global_median_)
+        out = pd.DataFrame({
+            "log_amount": np.log1p(X["amount"]),
+            "log_amount_vs_customer": np.log(X["amount_vs_customer_median"]),
+            "log_amount_vs_category": np.log(X["amount"] / cat_median),
+            "hour": hour,
+            "is_night": hour.between(*NIGHT_HOURS).astype(int),
+            "is_online": (X["channel"] == "online").astype(int),
+            "foreign_country": X["foreign_country"],
+            "log_distance": np.log1p(X["distance_from_home"]),
+            "merchant_risk": X["merchant_risk"],
+            "txn_count_1h": X["txn_count_1h"],
+            "txn_count_24h": X["txn_count_24h"],
+            "log_amount_sum_24h": np.log1p(X["amount_sum_24h"]),
+            "small_txn_count_1h": X["small_txn_count_1h"],
+            "log_secs_since_last_txn": np.log1p(X["secs_since_last_txn"]),
+            "log_prior_txn_count": np.log1p(X["prior_txn_count"]),
+            "log_device_age_days": np.log1p(X["device_age_days"]),
+            "new_device": X["new_device"],
+            "new_category": X["new_category"],
+        }, index=X.index)
+        for c in CATEGORIES:
+            out[f"cat_{c}"] = (X["merchant_category"] == c).astype(int)
+        return out[FEATURES]
+
+    def get_feature_names_out(self, input_features=None):
+        return np.asarray(FEATURES, dtype=object)

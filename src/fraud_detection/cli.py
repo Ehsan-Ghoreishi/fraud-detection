@@ -6,22 +6,18 @@ import argparse
 import logging
 from pathlib import Path
 
-import pandas as pd
-
 from fraud_detection import config
 
 log = logging.getLogger(__name__)
 
 
 def _generate(args) -> None:
-    from fraud_detection.data import generate_transactions
+    from fraud_detection.data import generate
+    from fraud_detection.simulation import SimulationConfig
 
-    df = generate_transactions(n=args.n, fraud_rate=args.fraud_rate,
-                               seed=args.seed)
-    args.data.parent.mkdir(parents=True, exist_ok=True)
-    df.to_csv(args.data, index=False)
-    log.info("Generated %s transactions (%.2f%% fraud) -> %s",
-             f"{len(df):,}", df.is_fraud.mean() * 100, args.data)
+    generate(args.data, SimulationConfig(
+        n_customers=args.customers, days=args.days,
+        fraud_episode_rate=args.fraud_episode_rate), seed=args.seed)
 
 
 def _eda(args) -> None:
@@ -35,11 +31,12 @@ def _train(args) -> None:
     from fraud_detection.scoring import save_model
 
     out = train_and_evaluate(data_path=args.data, reports_dir=args.reports,
-                             cost_fn=args.cost_fn, cost_fp=args.cost_fp,
-                             cv_folds=args.cv_folds)
+                             chargeback_fee=args.chargeback_fee,
+                             cost_fp=args.cost_fp, cv_folds=args.cv_folds,
+                             test_start=args.test_start, models=args.models)
     path = save_model(out["model"], out["threshold"],
                       metadata={"best_model": out["summary"]["best_model"],
-                                "cost_false_negative": args.cost_fn,
+                                "chargeback_fee": args.chargeback_fee,
                                 "cost_false_positive": args.cost_fp},
                       path=args.model)
     log.info("Model saved to %s", path)
@@ -51,9 +48,10 @@ def _train(args) -> None:
 
 
 def _score(args) -> None:
+    from fraud_detection.data import load_transactions
     from fraud_detection.scoring import load_model, score
 
-    scored = score(pd.read_csv(args.input), load_model(args.model))
+    scored = score(load_transactions(args.input), load_model(args.model))
     scored.to_csv(args.output, index=False)
     log.info("Scored %s transactions, %s flagged for review -> %s",
              f"{len(scored):,}", f"{scored.flag.sum():,}", args.output)
@@ -73,10 +71,12 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--data", type=Path, default=config.DATA_PATH,
                        help="transactions CSV (default: %(default)s)")
 
-    p = sub.add_parser("generate", help="create the synthetic dataset")
+    p = sub.add_parser("generate", help="simulate a transaction log")
     data_arg(p)
-    p.add_argument("--n", type=int, default=60_000)
-    p.add_argument("--fraud-rate", type=float, default=0.017)
+    p.add_argument("--customers", type=int, default=2_500)
+    p.add_argument("--days", type=int, default=181)
+    p.add_argument("--fraud-episode-rate", type=float, default=0.03,
+                   help="fraud episodes per customer per month")
     p.add_argument("--seed", type=int, default=config.RANDOM_STATE)
     p.set_defaults(func=_generate)
 
@@ -89,11 +89,17 @@ def build_parser() -> argparse.ArgumentParser:
     data_arg(p)
     p.add_argument("--reports", type=Path, default=config.REPORTS)
     p.add_argument("--model", type=Path, default=MODEL_PATH)
-    p.add_argument("--cost-fn", type=float, default=config.COST_FALSE_NEGATIVE,
-                   help="cost of a missed fraud in € (default: %(default)s)")
+    p.add_argument("--chargeback-fee", type=float,
+                   default=config.CHARGEBACK_FEE,
+                   help="€ added to the amount of every missed fraud "
+                        "(default: %(default)s)")
     p.add_argument("--cost-fp", type=float, default=config.COST_FALSE_POSITIVE,
                    help="cost of a false alarm in € (default: %(default)s)")
     p.add_argument("--cv-folds", type=int, default=config.CV_FOLDS)
+    p.add_argument("--test-start", default=config.TEST_START,
+                   help="first day of the out-of-time test period")
+    p.add_argument("--models", nargs="+", metavar="NAME",
+                   help="restrict candidates, e.g. gradient_boosting")
     p.add_argument("--no-plots", dest="plots", action="store_false",
                    help="skip writing report figures")
     p.set_defaults(func=_train)

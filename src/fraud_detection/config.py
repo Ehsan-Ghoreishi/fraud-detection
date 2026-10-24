@@ -11,9 +11,12 @@ REPORTS = ROOT / "reports"
 MODELS_DIR = ROOT / "models"
 
 RANDOM_STATE = 42
-TEST_SIZE = 0.25
-CV_FOLDS = 5
+# out-of-time evaluation: train on Jan-Apr, test on May-Jun
+TEST_START = "2026-05-01"
+CV_FOLDS = 4
 
 # Business cost assumptions (euros). These are the lever a risk team tunes.
-COST_FALSE_NEGATIVE = 150.0   # average loss from letting one fraud through
-COST_FALSE_POSITIVE = 5.0     # cost of reviewing/blocking one legit txn
+# A missed fraud costs the transaction amount plus a chargeback handling fee;
+# a false alarm costs an analyst review and some customer friction.
+CHARGEBACK_FEE = 20.0
+COST_FALSE_POSITIVE = 5.0

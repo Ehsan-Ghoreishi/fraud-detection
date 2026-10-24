@@ -7,53 +7,47 @@ from fraud_detection.features import (
     RAW_COLUMNS,
     FraudFeatures,
     add_behavioural_features,
-    engineer_features,
 )
 
 
-def _txn(**overrides):
-    row = {"amount": 20.0, "hour": 12, "days_since_last_txn": 1.0,
-           "txn_count_1h": 1, "new_device": 0, "foreign_country": 0,
-           "distance_from_home": 5.0, "merchant_risk": 0.1}
-    row.update(overrides)
-    return row
+def _enriched(small_log):
+    return add_behavioural_features(small_log)
 
 
-def test_engineered_flags():
-    df = pd.DataFrame([
-        _txn(),
-        _txn(hour=3, txn_count_1h=4, distance_from_home=250.0),
-        _txn(amount=900.0, new_device=1, foreign_country=1),
-    ])
-    out = engineer_features(df, high_amount_log=np.log1p(100))
-    assert out.is_night.tolist() == [0, 1, 0]
-    assert out.high_velocity.tolist() == [0, 1, 0]
-    assert out.geo_risk.tolist() == [0, 1, 1]
-    assert out.device_geo_amount_risk.tolist() == [0, 0, 1]
-    assert np.allclose(out.log_amount, np.log1p(df.amount))
-
-
-def test_does_not_mutate_input():
-    df = pd.DataFrame([_txn()])
-    engineer_features(df)
-    assert list(df.columns) == RAW_COLUMNS
-
-
-def test_transformer_learns_cutoff_from_fit_data_only():
-    train = pd.DataFrame([_txn(amount=a) for a in (10.0, 20.0, 30.0)])
-    test = pd.DataFrame([_txn(amount=a, new_device=1, foreign_country=1)
-                         for a in (1_000.0, 2_000.0, 3_000.0)])
-    ft = FraudFeatures().fit(train)
-    assert ft.high_amount_log_ == np.log1p(20.0)
-    # every test amount is above the *training* median, so all are flagged;
-    # a cut-off leaked from the test rows would flag only one
-    assert ft.transform(test).device_geo_amount_risk.tolist() == [1, 1, 1]
-
-
-def test_transformer_output_columns(small_df):
-    out = FraudFeatures().fit_transform(small_df[RAW_COLUMNS])
+def test_transformer_output_columns(small_log):
+    X = _enriched(small_log)[RAW_COLUMNS]
+    out = FraudFeatures().fit_transform(X)
     assert list(out.columns) == FEATURES
     assert list(FraudFeatures().get_feature_names_out()) == FEATURES
+    assert np.isfinite(out.to_numpy(dtype=float)).all()
+    # exactly one merchant-category indicator is set per row
+    assert (out.filter(like="cat_").sum(axis=1) == 1).all()
+
+
+def test_transformer_learns_category_medians_from_fit_data_only(small_log):
+    X = _enriched(small_log)[RAW_COLUMNS]
+    train, test = X.iloc[:1000], X.iloc[1000:].assign(amount=lambda d: d.amount * 10)
+    ft = FraudFeatures().fit(train)
+    expected = train.groupby("merchant_category").amount.median().to_dict()
+    assert ft.category_median_ == expected
+    # inflating test amounts shifts their ratio to the *training* median;
+    # a median re-learned on the test rows would hide the shift
+    assert ft.transform(test).log_amount_vs_category.median() > 1.5
+
+
+def test_transformer_derives_time_and_channel_flags():
+    X = pd.DataFrame({
+        "timestamp": pd.to_datetime(["2026-01-01 03:00", "2026-01-01 14:00"]),
+        "amount": [10.0, 10.0], "merchant_category": ["grocery", "travel"],
+        "merchant_risk": [0.1, 0.2], "channel": ["in_store", "online"],
+        "foreign_country": [0, 1], "distance_from_home": [1.0, 900.0],
+        **{c: [0.0, 0.0] for c in BEHAVIOUR_COLUMNS},
+    }).assign(amount_vs_customer_median=1.0)
+    out = FraudFeatures().fit_transform(X)
+    assert out.hour.tolist() == [3, 14]
+    assert out.is_night.tolist() == [1, 0]
+    assert out.is_online.tolist() == [0, 1]
+    assert out.cat_travel.tolist() == [0, 1]
 
 
 # --------------------------------------------------------------------------- #

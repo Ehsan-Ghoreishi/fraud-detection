@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score
 
-from fraud_detection.config import COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE
+from fraud_detection.config import COST_FALSE_POSITIVE
 
 DEFAULT_THRESHOLDS = np.round(np.linspace(0.01, 0.99, 99), 2)
 
@@ -21,7 +21,7 @@ def _per_txn(cost, n: int) -> np.ndarray:
     return np.broadcast_to(cost, n) if cost.ndim == 0 else cost
 
 
-def cost_curve(y_true, proba, cost_fn=COST_FALSE_NEGATIVE,
+def cost_curve(y_true, proba, cost_fn,
                cost_fp: float = COST_FALSE_POSITIVE,
                thresholds=DEFAULT_THRESHOLDS) -> pd.DataFrame:
     """Expected business cost, FP and FN counts for every threshold."""
@@ -42,7 +42,7 @@ def cost_curve(y_true, proba, cost_fn=COST_FALSE_NEGATIVE,
     })
 
 
-def choose_threshold(y_true, proba, cost_fn=COST_FALSE_NEGATIVE,
+def choose_threshold(y_true, proba, cost_fn,
                      cost_fp: float = COST_FALSE_POSITIVE,
                      thresholds=DEFAULT_THRESHOLDS):
     """Pick the probability threshold that minimises expected business cost.
@@ -55,8 +55,7 @@ def choose_threshold(y_true, proba, cost_fn=COST_FALSE_NEGATIVE,
     return float(best), table
 
 
-def bootstrap_ci(y_true, proba, threshold: float,
-                 cost_fn=COST_FALSE_NEGATIVE,
+def bootstrap_ci(y_true, proba, threshold: float, cost_fn,
                  cost_fp: float = COST_FALSE_POSITIVE,
                  baseline_threshold: float = 0.5, n_boot: int = 1_000,
                  level: float = 0.95, seed: int = 0) -> dict:

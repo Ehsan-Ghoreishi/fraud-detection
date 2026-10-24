@@ -9,7 +9,8 @@ import pandas as pd
 
 from fraud_detection import __version__
 from fraud_detection.config import MODELS_DIR
-from fraud_detection.features import RAW_COLUMNS
+from fraud_detection.data import LOG_COLUMNS
+from fraud_detection.features import RAW_COLUMNS, add_behavioural_features
 
 MODEL_PATH = MODELS_DIR / "fraud_model.joblib"
 
@@ -39,11 +40,17 @@ def load_model(path: Path = MODEL_PATH) -> dict:
 
 
 def score(transactions: pd.DataFrame, bundle: dict) -> pd.DataFrame:
-    """Return the input with ``fraud_probability`` and ``flag`` columns."""
-    missing = [c for c in RAW_COLUMNS if c not in transactions.columns]
+    """Score a transaction log; adds ``fraud_probability`` and ``flag``.
+
+    Behavioural features need each customer's history, so pass the log
+    including earlier transactions — every row is scored using only the
+    rows before it, exactly as at authorisation time.
+    """
+    missing = [c for c in LOG_COLUMNS if c not in transactions.columns]
     if missing:
         raise ValueError(f"missing required columns: {missing}")
-    proba = bundle["pipeline"].predict_proba(transactions[RAW_COLUMNS])[:, 1]
+    enriched = add_behavioural_features(transactions)
+    proba = bundle["pipeline"].predict_proba(enriched[RAW_COLUMNS])[:, 1]
     return transactions.assign(
         fraud_probability=proba.round(4),
         flag=(proba >= bundle["threshold"]).astype(int),

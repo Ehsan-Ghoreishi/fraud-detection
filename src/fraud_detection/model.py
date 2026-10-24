@@ -1,23 +1,24 @@
 """
-Fraud detection pipeline: feature engineering, model training, and
-threshold-aware evaluation.
+Fraud detection pipeline: model selection, threshold tuning and out-of-time
+evaluation.
 
-Design choices that matter for a fraud/risk context (and that this file
-demonstrates deliberately):
+Design choices that matter for a fraud/risk context:
 
-1. Never evaluate fraud models on accuracy. With ~1.7% fraud, a model that
-   predicts "never fraud" is 98.3% accurate and 100% useless. We use
-   precision, recall, PR-AUC and a cost-based threshold instead.
+1. Never evaluate fraud models on accuracy. With ~0.5% fraud, a model that
+   predicts "never fraud" is 99.5% accurate and 100% useless. We use
+   PR-AUC, precision, recall, value caught and a cost-based threshold.
 
-2. Train/test split is stratified so both sets keep the same fraud ratio,
-   and all preprocessing is fit on the training data only (no leakage).
+2. Time is respected everywhere. Behavioural features only look at earlier
+   transactions, the test set is the last two months (out-of-time), and
+   cross-validation is forward-chaining, so drift shows up in the numbers
+   instead of being averaged away.
 
-3. Class imbalance is handled with class_weight rather than naive
-   oversampling, so we don't leak synthetic rows into evaluation.
+3. Class imbalance is handled with class weights rather than oversampling,
+   so no synthetic rows leak into evaluation.
 
-4. The final threshold is chosen from a business cost model (a missed fraud
-   costs far more than a false alarm), not left at the default 0.5 — this is
-   the decision a risk analyst actually owns.
+4. The decision threshold minimises expected business cost — a missed fraud
+   costs its amount plus a chargeback fee, a false alarm costs a review —
+   and is tuned on out-of-fold training predictions, then frozen.
 """
 
 from __future__ import annotations
@@ -26,178 +27,176 @@ import json
 import logging
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import (
     average_precision_score,
     brier_score_loss,
-    classification_report,
     confusion_matrix,
     roc_auc_score,
 )
-from sklearn.model_selection import (
-    StratifiedKFold,
-    cross_val_predict,
-    train_test_split,
-)
 
 from fraud_detection.config import (
-    COST_FALSE_NEGATIVE,
+    CHARGEBACK_FEE,
     COST_FALSE_POSITIVE,
     CV_FOLDS,
     DATA_PATH,
     RANDOM_STATE,
     REPORTS,
-    TEST_SIZE,
+    TEST_START,
 )
-from fraud_detection.evaluation import bootstrap_ci, choose_threshold, cost_curve
-from fraud_detection.features import FEATURES, RAW_COLUMNS
+from fraud_detection.data import load_transactions
+from fraud_detection.evaluation import (
+    bootstrap_ci,
+    choose_threshold,
+    cost_curve,
+    value_recall,
+)
+from fraud_detection.features import FEATURES, RAW_COLUMNS, add_behavioural_features
 from fraud_detection.models import build_models
+from fraud_detection.validation import forward_chaining_oof, out_of_time_split
 
 log = logging.getLogger(__name__)
 
 
-# --------------------------------------------------------------------------- #
-# Training & evaluation
-# --------------------------------------------------------------------------- #
 def train_and_evaluate(data: pd.DataFrame | None = None,
                        data_path: Path = DATA_PATH,
                        reports_dir: Path | None = REPORTS,
-                       cost_fn: float = COST_FALSE_NEGATIVE,
+                       chargeback_fee: float = CHARGEBACK_FEE,
                        cost_fp: float = COST_FALSE_POSITIVE,
                        cv_folds: int = CV_FOLDS,
+                       test_start: str | None = TEST_START,
+                       models: list[str] | None = None,
                        random_state: int = RANDOM_STATE) -> dict:
-    """Select a model, tune its threshold and evaluate it on held-out data.
+    """Select a model, tune its threshold and evaluate it out of time.
 
-    Pass ``data`` to train on an in-memory frame instead of ``data_path``.
-    Set ``reports_dir=None`` to skip writing metrics.json.
+    Pass ``data`` (a raw transaction log) instead of ``data_path`` to train
+    in memory, ``test_start=None`` to cut at two thirds of the period, and
+    ``models`` to restrict the candidates. ``reports_dir=None`` skips
+    writing metrics.json.
     """
-    df = pd.read_csv(data_path) if data is None else data
-    X, y = df[RAW_COLUMNS], df["is_fraud"]
+    raw = load_transactions(data_path) if data is None else data
+    enriched = add_behavioural_features(raw).sort_values(
+        ["timestamp", "transaction_id"], kind="stable").reset_index(drop=True)
+    train, test, cut = out_of_time_split(enriched, test_start)
+    X_train, y_train = train[RAW_COLUMNS], train["is_fraud"]
+    X_test, y_test = test[RAW_COLUMNS], test["is_fraud"]
+    log.info("Train: %s txns to %s | Test: %s txns from %s (out of time)",
+             f"{len(train):,}", (cut - pd.Timedelta(days=1)).date(),
+             f"{len(test):,}", cut.date())
 
-    # stratified split preserves the fraud ratio in both sets
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, stratify=y, random_state=random_state
-    )
+    # ---- model selection on forward-chaining out-of-fold predictions -------
+    candidates = build_models(random_state)
+    if models:
+        candidates = {k: candidates[k] for k in models}
+    results, oof = {}, {}
+    for name, model in candidates.items():
+        oof[name] = forward_chaining_oof(model, X_train, y_train, cv_folds)
+        seen = ~np.isnan(oof[name])
+        pr_auc = average_precision_score(y_train[seen], oof[name][seen])
+        roc_auc = roc_auc_score(y_train[seen], oof[name][seen])
+        results[name] = {"cv_pr_auc": round(pr_auc, 4),
+                         "cv_roc_auc": round(roc_auc, 4)}
+        log.info(f"{name:>22} | CV PR-AUC {pr_auc:.4f} | CV ROC-AUC {roc_auc:.4f}")
+    best_name = max(results, key=lambda k: results[k]["cv_pr_auc"])
+    log.info(f"\nBest model by CV PR-AUC: {best_name}")
 
-    # Model selection uses out-of-fold predictions on the training set only;
-    # the test set is touched exactly once, by the final chosen model.
-    cv = StratifiedKFold(n_splits=cv_folds, shuffle=True,
-                         random_state=random_state)
-    results = {}
-    models = build_models(random_state)
+    # ---- cost-based threshold, tuned on the same out-of-fold predictions ---
+    seen = ~np.isnan(oof[best_name])
+    fn_cost_train = train["amount"].to_numpy() + chargeback_fee
+    threshold, _ = choose_threshold(y_train[seen], oof[best_name][seen],
+                                    cost_fn=fn_cost_train[seen], cost_fp=cost_fp)
+    log.info(f"Cost-optimal threshold: {threshold:.2f}")
 
-    best_name, best_pr_auc, oof = None, -1.0, {}
-    for name, model in models.items():
-        oof_proba = cross_val_predict(model, X_train, y_train, cv=cv,
-                                      method="predict_proba")[:, 1]
-        oof[name] = oof_proba
+    # ---- refit on all training data, evaluate once on the future -----------
+    best_model = candidates[best_name].fit(X_train, y_train)
+    proba = best_model.predict_proba(X_test)[:, 1]
+    flagged = proba >= threshold
+    fn_cost_test = test["amount"].to_numpy() + chargeback_fee
 
-        roc_auc = roc_auc_score(y_train, oof_proba)
-        # PR-AUC is the key metric for imbalanced data
-        pr_auc = average_precision_score(y_train, oof_proba)
+    results[best_name].update({
+        "test_pr_auc": round(average_precision_score(y_test, proba), 4),
+        "test_roc_auc": round(roc_auc_score(y_test, proba), 4),
+        "test_brier": round(brier_score_loss(y_test, proba), 5),
+    })
+    tn, fp, fn, tp = confusion_matrix(y_test, flagged).ravel()
+    test_days = test["timestamp"].dt.normalize().nunique()
+    recall, precision = tp / max(tp + fn, 1), tp / max(tp + fp, 1)
+    caught_value = value_recall(y_test, flagged, test["amount"])
+    log.info(f"Test PR-AUC {results[best_name]['test_pr_auc']:.3f} | "
+             f"recall {recall:.1%} | precision {precision:.1%} | "
+             f"fraud value caught {caught_value:.1%} | "
+             f"{(tp + fp) / test_days:.0f} alerts/day")
 
-        results[name] = {
-            "cv_roc_auc": round(roc_auc, 4),
-            "cv_pr_auc": round(pr_auc, 4),
-        }
-        log.info(f"{name:>22} | CV ROC-AUC {roc_auc:.4f} | CV PR-AUC {pr_auc:.4f}")
+    costs = cost_curve(y_test, proba, fn_cost_test, cost_fp,
+                       thresholds=[threshold, 0.5])["cost"]
+    cost_at_threshold, cost_at_default = map(float, costs)
+    no_model_cost = float(fn_cost_test[y_test.to_numpy() == 1].sum())
+    log.info(f"Test cost €{cost_at_threshold:,.0f} at {threshold:.2f} "
+             f"(€{cost_at_default:,.0f} at 0.50, €{no_model_cost:,.0f} "
+             "with no model)")
 
-        if pr_auc > best_pr_auc:
-            best_name, best_pr_auc = name, pr_auc
-
-    best_model = models[best_name].fit(X_train, y_train)
-    best_proba = best_model.predict_proba(X_test)[:, 1]
-    results[best_name]["test_roc_auc"] = round(roc_auc_score(y_test, best_proba), 4)
-    results[best_name]["test_pr_auc"] = round(
-        average_precision_score(y_test, best_proba), 4)
-    # class weighting inflates probabilities; track how far they drift
-    results[best_name]["test_brier"] = round(
-        brier_score_loss(y_test, best_proba), 5)
-
-    log.info(f"\nBest model by PR-AUC: {best_name}\n")
-
-    # ---- cost-based threshold selection ------------------------------------
-    # tuned on out-of-fold training predictions, then applied unchanged to
-    # the test set — exactly how it would be frozen before going live
-    threshold, _ = choose_threshold(y_train, oof[best_name],
-                                    cost_fn=cost_fn, cost_fp=cost_fp)
-    preds = (best_proba >= threshold).astype(int)
-
-    log.info(f"Cost-optimal threshold: {threshold:.3f}")
-    log.info("\nClassification report at cost-optimal threshold:\n")
-    log.info(classification_report(y_test, preds, digits=3,
-                                target_names=["legit", "fraud"]))
-
-    cm = confusion_matrix(y_test, preds)
-    tn, fp, fn, tp = cm.ravel()
-    caught = tp / (tp + fn)
-    review_rate = (tp + fp) / len(y_test)
-    log.info(f"Fraud caught (recall):     {caught:.1%}")
-    log.info(f"Transactions flagged:      {review_rate:.1%} of all traffic")
-    log.info(f"False alarms per real fraud: {fp / max(tp, 1):.1f}")
-
-    # what the threshold choice is worth, measured on unseen data
-    test_costs = cost_curve(y_test, best_proba, cost_fn, cost_fp,
-                            thresholds=[threshold, 0.5])["cost"]
-    cost_at_threshold, cost_at_default = map(float, test_costs)
-    log.info(f"Test-set cost at {threshold:.2f}: €{cost_at_threshold:,.0f} "
-          f"(vs €{cost_at_default:,.0f} at 0.50)")
-
-    # ~250 test frauds is a small sample: quantify how much the numbers move
-    ci = bootstrap_ci(y_test, best_proba, threshold, cost_fn, cost_fp,
+    ci = bootstrap_ci(y_test, proba, threshold, fn_cost_test, cost_fp,
                       seed=random_state)
-    log.info("95%% CI  recall %s | precision %s | cost vs 0.50 %s",
-             ci["recall"], ci["precision"], ci["cost_vs_baseline"])
+    log.info("95%% CI  PR-AUC %s | recall %s | precision %s",
+             ci["pr_auc"], ci["recall"], ci["precision"])
 
-    # persist metrics for the README / reports
     summary = {
+        "data": {
+            "train_transactions": len(train), "test_transactions": len(test),
+            "train_fraud_rate": round(float(y_train.mean()), 5),
+            "test_fraud_rate": round(float(y_test.mean()), 5),
+            "test_start": str(cut.date()),
+        },
         "models": results,
         "best_model": best_name,
         "cost_optimal_threshold": round(threshold, 3),
-        "recall_fraud": round(caught, 3),
-        "precision_fraud": round(tp / max(tp + fp, 1), 3),
-        "flagged_rate": round(review_rate, 3),
+        "recall_fraud": round(recall, 3),
+        "precision_fraud": round(precision, 3),
+        "value_recall": round(caught_value, 3),
+        "flagged_rate": round(float(flagged.mean()), 4),
+        "alerts_per_day": round((tp + fp) / test_days, 1),
         "confusion_matrix": {"tn": int(tn), "fp": int(fp),
                              "fn": int(fn), "tp": int(tp)},
         "business_cost": {
-            "cost_false_negative": cost_fn,
+            "chargeback_fee": chargeback_fee,
             "cost_false_positive": cost_fp,
             "test_cost_at_threshold": cost_at_threshold,
             "test_cost_at_default_0_5": cost_at_default,
-            "test_savings_vs_default": cost_at_default - cost_at_threshold,
+            "test_cost_without_model": no_model_cost,
+            "test_savings_vs_no_model": no_model_cost - cost_at_threshold,
         },
         "confidence_intervals_95": ci,
     }
 
-    # feature importance via permutation — works for ANY model and measures
-    # real predictive contribution. Explainability is non-negotiable in risk:
-    # a fraud team must be able to justify why a customer was flagged.
-    # permute the engineered features (not the raw columns) so importances
-    # line up with what the classifier actually sees
+    # Explainability is non-negotiable in risk: permutation importance
+    # measures each engineered feature's real contribution on unseen data.
     X_test_features = best_model.named_steps["features"].transform(X_test)
     perm = permutation_importance(
-        best_model[1:], X_test_features, y_test, n_repeats=10,
+        best_model[1:], X_test_features, y_test, n_repeats=5,
         random_state=random_state, scoring="average_precision", n_jobs=-1,
     )
-    importances = sorted(
-        zip(FEATURES, perm.importances_mean, strict=True),
-        key=lambda t: t[1], reverse=True,
-    )
+    importances = sorted(zip(FEATURES, perm.importances_mean, strict=True),
+                         key=lambda t: t[1], reverse=True)
     summary["feature_importance"] = [
         {"feature": f, "importance": round(float(v), 4)} for f, v in importances
     ]
+    log.info("\nTop fraud signals (permutation importance, drop in PR-AUC):")
+    for f, v in importances[:8]:
+        log.info(f"  {f:>26}: {v:.4f}")
+
     if reports_dir is not None:
         reports_dir.mkdir(parents=True, exist_ok=True)
-        (reports_dir / "metrics.json").write_text(json.dumps(summary, indent=2) + "\n")
-    log.info("\nTop fraud signals the model relies on (permutation importance):")
-    for f, v in importances[:6]:
-        log.info(f"  {f:>24}: {v:.4f}")
+        (reports_dir / "metrics.json").write_text(
+            json.dumps(summary, indent=2) + "\n")
 
-    return {"summary": summary, "model": best_model,
-            "y_test": y_test, "proba": best_proba,
-            "y_train": y_train, "oof_proba": oof[best_name],
-            "threshold": threshold}
+    return {
+        "summary": summary, "model": best_model, "threshold": threshold,
+        "train": train.assign(oof_proba=oof[best_name]),
+        "test": test.assign(proba=proba, flagged=flagged.astype(int)),
+        "y_test": y_test, "proba": proba,
+    }
 
 
 if __name__ == "__main__":
