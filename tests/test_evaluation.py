@@ -1,6 +1,6 @@
 import numpy as np
 
-from fraud_detection.evaluation import choose_threshold, cost_curve
+from fraud_detection.evaluation import bootstrap_ci, choose_threshold, cost_curve
 
 
 def test_cost_curve_counts_errors():
@@ -46,3 +46,17 @@ def test_ties_resolve_to_lowest_threshold():
     proba = np.array([0.0, 1.0])
     threshold, _ = choose_threshold(y, proba)
     assert threshold == 0.01
+
+
+def test_bootstrap_ci_brackets_point_estimate():
+    rng = np.random.default_rng(2)
+    y = np.r_[np.ones(100), np.zeros(1_900)]
+    proba = np.clip(y * 0.4 + rng.random(2_000) * 0.6, 0, 1)
+    ci = bootstrap_ci(y, proba, threshold=0.5, n_boot=200)
+    recall = (proba[y == 1] >= 0.5).mean()
+    assert ci["recall"][0] <= recall <= ci["recall"][1]
+    assert set(ci) == {"pr_auc", "recall", "precision", "cost_vs_baseline"}
+    # comparing a threshold with itself must give exactly zero difference
+    same = bootstrap_ci(y, proba, threshold=0.5, baseline_threshold=0.5,
+                        n_boot=50)
+    assert same["cost_vs_baseline"] == [0.0, 0.0]

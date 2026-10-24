@@ -49,7 +49,7 @@ from fraud_detection.config import (
     REPORTS,
     TEST_SIZE,
 )
-from fraud_detection.evaluation import choose_threshold, cost_curve
+from fraud_detection.evaluation import bootstrap_ci, choose_threshold, cost_curve
 from fraud_detection.features import FEATURES, RAW_COLUMNS
 from fraud_detection.models import build_models
 
@@ -140,6 +140,12 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     log.info(f"Test-set cost at {threshold:.2f}: €{cost_at_threshold:,.0f} "
           f"(vs €{cost_at_default:,.0f} at 0.50)")
 
+    # ~250 test frauds is a small sample: quantify how much the numbers move
+    ci = bootstrap_ci(y_test, best_proba, threshold, cost_fn, cost_fp,
+                      seed=random_state)
+    log.info("95%% CI  recall %s | precision %s | cost vs 0.50 %s",
+             ci["recall"], ci["precision"], ci["cost_vs_baseline"])
+
     # persist metrics for the README / reports
     summary = {
         "models": results,
@@ -157,6 +163,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
             "test_cost_at_default_0_5": cost_at_default,
             "test_savings_vs_default": cost_at_default - cost_at_threshold,
         },
+        "confidence_intervals_95": ci,
     }
 
     # feature importance via permutation — works for ANY model and measures

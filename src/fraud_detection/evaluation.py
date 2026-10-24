@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import average_precision_score
 
 from fraud_detection.config import COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE
 
@@ -41,3 +42,40 @@ def choose_threshold(y_true, proba, cost_fn: float = COST_FALSE_NEGATIVE,
     table = cost_curve(y_true, proba, cost_fn, cost_fp, thresholds)
     best = table.loc[table["cost"].idxmin(), "threshold"]
     return float(best), table
+
+
+def bootstrap_ci(y_true, proba, threshold: float,
+                 cost_fn: float = COST_FALSE_NEGATIVE,
+                 cost_fp: float = COST_FALSE_POSITIVE,
+                 baseline_threshold: float = 0.5, n_boot: int = 1_000,
+                 level: float = 0.95, seed: int = 0) -> dict:
+    """Bootstrap confidence intervals for the headline test metrics.
+
+    Resamples the test set with replacement, stratified by class so every
+    replicate keeps the observed fraud count. ``cost_vs_baseline`` is the
+    cost at ``threshold`` minus the cost at ``baseline_threshold``:
+    negative means the tuned threshold is cheaper.
+    """
+    y_true = np.asarray(y_true).astype(bool)
+    proba = np.asarray(proba)
+    rng = np.random.default_rng(seed)
+    pos, neg = np.flatnonzero(y_true), np.flatnonzero(~y_true)
+
+    stats = {k: [] for k in ("pr_auc", "recall", "precision",
+                             "cost_vs_baseline")}
+    for _ in range(n_boot):
+        idx = np.concatenate([rng.choice(pos, pos.size),
+                              rng.choice(neg, neg.size)])
+        y, p = y_true[idx], proba[idx]
+        flagged = p >= threshold
+        tp = (flagged & y).sum()
+        stats["pr_auc"].append(average_precision_score(y, p))
+        stats["recall"].append(tp / y.sum())
+        stats["precision"].append(tp / max(flagged.sum(), 1))
+        costs = cost_curve(y, p, cost_fn, cost_fp,
+                           thresholds=[threshold, baseline_threshold])["cost"]
+        stats["cost_vs_baseline"].append(costs.iloc[0] - costs.iloc[1])
+
+    tail = (1 - level) / 2 * 100
+    return {k: [round(float(v), 4) for v in np.percentile(s, [tail, 100 - tail])]
+            for k, s in stats.items()}
