@@ -8,13 +8,21 @@ Generate the figures used in the README and any presentation:
 
 from __future__ import annotations
 
-import matplotlib.pyplot as plt
-from matplotlib.colors import LinearSegmentedColormap
-from sklearn.metrics import precision_recall_curve, confusion_matrix
+from pathlib import Path
 
-from fraud_detection.config import REPORTS
-from fraud_detection.evaluation import choose_threshold
-from fraud_detection.model import train_and_evaluate
+import matplotlib
+
+matplotlib.use("Agg")  # render to files; never needs a display
+
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
+from sklearn.metrics import (  # noqa: E402
+    average_precision_score, confusion_matrix, precision_recall_curve,
+)
+
+from fraud_detection.config import REPORTS  # noqa: E402
+from fraud_detection.evaluation import cost_curve  # noqa: E402
+from fraud_detection.model import train_and_evaluate  # noqa: E402
 
 NAVY = "#1F3864"
 ACCENT = "#2E86AB"
@@ -29,22 +37,30 @@ plt.rcParams.update({
 })
 
 
-def main():
-    global summary
-    out = train_and_evaluate()
-    y_test, proba, threshold = out["y_test"], out["proba"], out["threshold"]
+def make_all(out: dict, reports_dir: Path = REPORTS) -> None:
+    """Write every report figure from the output of train_and_evaluate."""
+    reports_dir.mkdir(parents=True, exist_ok=True)
     summary = out["summary"]
+    cost = summary["business_cost"]
+    plot_pr_curve(out["y_test"], out["proba"], reports_dir / "pr_curve.png")
+    plot_confusion(out["y_test"], out["proba"], out["threshold"],
+                   reports_dir / "confusion_matrix.png")
+    plot_cost_curve(out["y_train"], out["oof_proba"],
+                    out["y_test"], out["proba"], out["threshold"],
+                    cost["cost_false_negative"], cost["cost_false_positive"],
+                    reports_dir / "cost_curve.png")
+    plot_feature_importance(summary.get("feature_importance", []),
+                            reports_dir / "feature_importance.png")
 
-    _pr_curve(y_test, proba)
-    _confusion(y_test, proba, threshold)
-    _cost_curve(y_test, proba)
-    _feature_importance(summary)
+
+def main():
+    make_all(train_and_evaluate())
     print("\nFigures written to reports/")
 
 
-def _pr_curve(y_test, proba):
+def plot_pr_curve(y_test, proba, path: Path) -> None:
     precision, recall, _ = precision_recall_curve(y_test, proba)
-    ap = summary_ap(y_test, proba)
+    ap = average_precision_score(y_test, proba)
     fig, ax = plt.subplots(figsize=(6, 4.5))
     ax.plot(recall, precision, color=NAVY, lw=2.5,
             label=f"Model (PR-AUC = {ap:.3f})")
@@ -57,11 +73,11 @@ def _pr_curve(y_test, proba):
     ax.legend(loc="lower left")
     ax.set_ylim(0, 1.02)
     fig.tight_layout()
-    fig.savefig(REPORTS / "pr_curve.png")
+    fig.savefig(path)
     plt.close(fig)
 
 
-def _confusion(y_test, proba, threshold):
+def plot_confusion(y_test, proba, threshold, path: Path) -> None:
     preds = (proba >= threshold).astype(int)
     cm = confusion_matrix(y_test, preds)
     cmap = LinearSegmentedColormap.from_list("navy", ["#EAF0F7", NAVY])
@@ -82,52 +98,46 @@ def _confusion(y_test, proba, threshold):
                     color="white" if val > cm.max() / 2 else NAVY,
                     fontweight="bold")
     fig.tight_layout()
-    fig.savefig(REPORTS / "confusion_matrix.png")
+    fig.savefig(path)
     plt.close(fig)
 
 
-def _cost_curve(y_test, proba):
-    _, cost_table = choose_threshold(y_test, proba)
-    best_t = cost_table.loc[cost_table["cost"].idxmin(), "threshold"]
-    best_c = cost_table["cost"].min()
-    fig, ax = plt.subplots(figsize=(6, 4.5))
-    ax.plot(cost_table["threshold"], cost_table["cost"],
-            color=ACCENT, lw=2.5)
-    ax.axvline(best_t, color=RED, ls="--", lw=1.5,
-               label=f"Cost-optimal = {best_t:.2f}")
+def plot_cost_curve(y_train, oof_proba, y_test, proba, threshold,
+                    cost_fn, cost_fp, path: Path) -> None:
+    """Cost per 1,000 transactions on CV (where tuned) and test data."""
+    cv_table = cost_curve(y_train, oof_proba, cost_fn, cost_fp)
+    test_table = cost_curve(y_test, proba, cost_fn, cost_fp)
+    fig, ax = plt.subplots(figsize=(6.5, 4.5))
+    ax.plot(cv_table["threshold"], cv_table["cost"] / len(y_train) * 1000,
+            color=ACCENT, lw=2.5, label="Train (out-of-fold) — used to tune")
+    ax.plot(test_table["threshold"], test_table["cost"] / len(y_test) * 1000,
+            color=NAVY, lw=1.5, alpha=0.7, label="Test (held out)")
+    ax.axvline(threshold, color=RED, ls="--", lw=1.5,
+               label=f"Chosen = {threshold:.2f}")
     ax.axvline(0.5, color="gray", ls=":", lw=1.5, label="Default = 0.50")
-    ax.scatter([best_t], [best_c], color=RED, zorder=5)
     ax.set_xlabel("Decision threshold")
-    ax.set_ylabel("Expected business cost (€)")
-    ax.set_title("Why We Don't Use the Default Threshold")
+    ax.set_ylabel("Expected cost per 1,000 txns (€)")
+    ax.set_title("Business Cost vs Decision Threshold")
     ax.legend()
     fig.tight_layout()
-    fig.savefig(REPORTS / "cost_curve.png")
+    fig.savefig(path)
     plt.close(fig)
 
 
-def _feature_importance(summary):
-    fi = summary.get("feature_importance")
-    if not fi:
+def plot_feature_importance(feature_importance: list[dict], path: Path) -> None:
+    if not feature_importance:
         return
-    fi = fi[:8][::-1]
+    fi = feature_importance[:8][::-1]
     names = [d["feature"] for d in fi]
     vals = [d["importance"] for d in fi]
     fig, ax = plt.subplots(figsize=(6.5, 4.5))
     ax.barh(names, vals, color=NAVY)
-    ax.set_xlabel("Importance")
-    ax.set_title("Top Fraud Signals")
+    ax.set_xlabel("Drop in PR-AUC when shuffled")
+    ax.set_title("Top Fraud Signals (permutation importance)")
     fig.tight_layout()
-    fig.savefig(REPORTS / "feature_importance.png")
+    fig.savefig(path)
     plt.close(fig)
 
 
-def summary_ap(y_test, proba):
-    from sklearn.metrics import average_precision_score
-    return average_precision_score(y_test, proba)
-
-
-# make `summary` importable inside _pr_curve without recompute juggling
-summary = {}
 if __name__ == "__main__":
     main()
