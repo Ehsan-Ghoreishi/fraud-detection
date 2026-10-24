@@ -8,7 +8,6 @@ Generate the figures used in the README and any presentation:
 
 from __future__ import annotations
 
-import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 from sklearn.metrics import precision_recall_curve, confusion_matrix
@@ -67,7 +66,7 @@ def _confusion(y_test, proba, threshold):
     cm = confusion_matrix(y_test, preds)
     cmap = LinearSegmentedColormap.from_list("navy", ["#EAF0F7", NAVY])
     fig, ax = plt.subplots(figsize=(5, 4.5))
-    im = ax.imshow(cm, cmap=cmap)
+    ax.imshow(cm, cmap=cmap)
     labels = ["Legit", "Fraud"]
     ax.set_xticks([0, 1], labels)
     ax.set_yticks([0, 1], labels)

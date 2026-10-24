@@ -23,22 +23,21 @@ demonstrates deliberately):
 from __future__ import annotations
 import json
 
-import numpy as np
 import pandas as pd
+from sklearn.inspection import permutation_importance
 from sklearn.model_selection import (
     StratifiedKFold, cross_val_predict, train_test_split,
 )
 from sklearn.metrics import (
     classification_report, confusion_matrix, roc_auc_score,
-    average_precision_score, precision_recall_curve, roc_curve,
+    average_precision_score,
 )
 
 from fraud_detection.features import FEATURES
 from fraud_detection.evaluation import choose_threshold
 from fraud_detection.models import build_models
 from fraud_detection.config import (
-    COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, CV_FOLDS, DATA_PATH, RANDOM_STATE,
-    REPORTS, TEST_SIZE,
+    CV_FOLDS, DATA_PATH, RANDOM_STATE, REPORTS, TEST_SIZE,
 )
 
 
@@ -90,7 +89,7 @@ def train_and_evaluate() -> dict:
     # ---- cost-based threshold selection ------------------------------------
     # tuned on out-of-fold training predictions, then applied unchanged to
     # the test set — exactly how it would be frozen before going live
-    threshold, cost_table = choose_threshold(y_train, oof[best_name])
+    threshold, _ = choose_threshold(y_train, oof[best_name])
     preds = (best_proba >= threshold).astype(int)
 
     print(f"Cost-optimal threshold: {threshold:.3f}")
@@ -117,13 +116,10 @@ def train_and_evaluate() -> dict:
         "confusion_matrix": {"tn": int(tn), "fp": int(fp),
                              "fn": int(fn), "tp": int(tp)},
     }
-    REPORTS.mkdir(exist_ok=True)
-    (REPORTS / "metrics.json").write_text(json.dumps(summary, indent=2))
 
     # feature importance via permutation — works for ANY model and measures
     # real predictive contribution. Explainability is non-negotiable in risk:
     # a fraud team must be able to justify why a customer was flagged.
-    from sklearn.inspection import permutation_importance
     # permute the engineered features (not the raw columns) so importances
     # line up with what the classifier actually sees
     X_test_features = best_model.named_steps["features"].transform(X_test)
@@ -138,6 +134,7 @@ def train_and_evaluate() -> dict:
     summary["feature_importance"] = [
         {"feature": f, "importance": round(float(v), 4)} for f, v in importances
     ]
+    REPORTS.mkdir(exist_ok=True)
     (REPORTS / "metrics.json").write_text(json.dumps(summary, indent=2))
     print("\nTop fraud signals the model relies on (permutation importance):")
     for f, v in importances[:6]:
