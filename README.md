@@ -1,5 +1,8 @@
 # Fraud Detection on Payment Transactions
 
+[![CI](https://github.com/Ehsan-Ghoreishi/fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/Ehsan-Ghoreishi/fraud-detection/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
+
 An end-to-end machine-learning pipeline that flags fraudulent card
 transactions, built the way a **fraud / risk analyst** would actually approach
 it: domain-driven features, honest evaluation for imbalanced data, and a
@@ -26,19 +29,20 @@ This project is built around that reality.
 
 ## Headline results
 
-On a held-out test set (25% of data, never seen in training):
+On a held-out test set (25% of data) that played **no part** in feature
+statistics, model selection or threshold tuning:
 
 | Metric | Value | What it means |
 |---|---|---|
-| **Fraud caught (recall)** | **98.8%** | Of all real fraud, we catch nearly all of it |
-| **Precision** | 77.8% | Of everything we flag, ~4 in 5 are truly fraud |
+| **Fraud caught (recall)** | **97.6%** | Of all real fraud, we catch nearly all of it |
+| **Precision** | 84.1% | Of everything we flag, ~5 in 6 are truly fraud |
 | **PR-AUC** | 0.990 | Ranking quality on the imbalanced positive class |
 | **ROC-AUC** | 0.9998 | Overall separability |
-| **Traffic flagged** | 2.2% | Only a small slice needs review |
-| **False alarms per real fraud** | 0.3 | Very low customer friction |
+| **Traffic flagged** | 2.0% | Only a small slice needs review |
+| **False alarms per real fraud** | 0.2 | Very low customer friction |
 
-Concretely, on 15,000 test transactions the model missed only **3 frauds out
-of 255** while flagging just 72 legitimate transactions for review.
+Concretely, on 15,000 test transactions the model missed **6 frauds out of
+255** while flagging just 47 legitimate transactions for review.
 
 ![Precision-Recall Curve](reports/pr_curve.png)
 
@@ -55,11 +59,27 @@ that **minimises expected business cost** instead of accepting the default:
 Cost = (false negatives × €150) + (false positives × €5)
 ```
 
+The threshold is tuned on **out-of-fold predictions from the training set**
+and then frozen — exactly as it would be before going live — and only then
+measured on the test set:
+
 ![Cost vs Threshold](reports/cost_curve.png)
 
-The optimal threshold lands at **0.65**, not 0.50 — and it's the single most
-important decision a risk analyst owns. Change the cost assumptions and the
-threshold moves; the pipeline recomputes it automatically.
+The cost-optimal threshold lands at **0.77**. An honest finding from the
+held-out data: the cost curve is almost flat between ~0.5 and ~0.8, and on
+this particular test sample the tuned threshold (€1,135) is no better than
+the default 0.5 (€1,005). With only ~250 frauds in the test set, a couple of
+extra misses swing the total. The lesson for a risk team is that the
+*cost assumptions* move the threshold far more than fine-tuning does — and
+the pipeline re-runs that analysis in one command:
+
+```bash
+fraud-detection train --cost-fn 400 --cost-fp 5   # e.g. higher-value card portfolio
+```
+
+> An earlier version of this project tuned the threshold and picked the
+> model on the test set itself, which reported 0.65 / 98.8% recall. See
+> [CHANGELOG.md](CHANGELOG.md) for what changed and why.
 
 ---
 
@@ -88,6 +108,7 @@ contribution) rather than opaque built-in scores:
 
 ![Feature Importance](reports/feature_importance.png)
 
+Importance is the drop in PR-AUC when a feature is shuffled on the test set.
 Merchant risk and distance-from-home dominate — consistent with how real card
 fraud presents.
 
@@ -98,13 +119,18 @@ fraud presents.
 ## Engineering choices worth calling out
 
 - **Stratified train/test split** so both sets keep the true fraud ratio.
-- **No data leakage** — scaling and all preprocessing are fit on training data
-  only, inside an sklearn `Pipeline`.
+- **No data leakage** — every learned statistic (feature cut-offs, scaling)
+  lives inside an sklearn `Pipeline`, and the model choice and decision
+  threshold come from 5-fold cross-validation on the training split. The
+  test set is scored exactly once.
 - **Imbalance handled with `class_weight="balanced"`**, not naive oversampling
   that would leak synthetic rows into evaluation.
 - **Two models compared** (logistic regression vs random forest) and selected
-  by **PR-AUC**, the correct metric for rare-event detection.
-- **Reproducible** — fixed seeds, one command runs the whole thing.
+  by out-of-fold **PR-AUC**, the correct metric for rare-event detection.
+- **Deployable artefact** — the fitted pipeline is saved together with its
+  threshold, and `fraud-detection score` applies it to new transactions.
+- **Tested and reproducible** — fixed seeds, a pytest suite and CI on
+  Python 3.10–3.12; one command regenerates every number and figure.
 
 ---
 
@@ -112,15 +138,23 @@ fraud presents.
 
 ```
 fraud-detection/
-├── src/
-│   ├── generate_data.py   # realistic synthetic transactions (real fraud patterns)
-│   ├── eda.py             # exploratory analysis + overview figure
-│   ├── fraud_model.py     # feature engineering, training, cost-based evaluation
-│   └── make_plots.py      # all reporting figures
-├── reports/               # generated metrics.json + figures
-├── data/                  # generated dataset (git-ignored in practice)
-├── requirements.txt
-└── README.md
+├── src/fraud_detection/
+│   ├── config.py        # paths, seed, cost assumptions
+│   ├── data.py          # realistic synthetic transactions (real fraud patterns)
+│   ├── features.py      # domain features + leakage-safe FraudFeatures transformer
+│   ├── models.py        # candidate pipelines
+│   ├── evaluation.py    # cost curve and threshold selection
+│   ├── model.py         # CV model selection, threshold tuning, test evaluation
+│   ├── scoring.py       # save/load model bundle, score new transactions
+│   ├── eda.py           # exploratory analysis + overview figure
+│   ├── plots.py         # reporting figures
+│   └── cli.py           # `fraud-detection` command
+├── tests/               # pytest suite
+├── notebooks/           # step-by-step walkthrough
+├── reports/             # generated metrics.json + figures
+├── docs/model_card.md   # intended use, limitations, evaluation
+├── Makefile
+└── pyproject.toml
 ```
 
 > **Note on data:** real payment data is confidential, so this repo generates a
@@ -134,26 +168,35 @@ fraud-detection/
 ## Run it yourself
 
 ```bash
-pip install -r requirements.txt
+pip install -e ".[dev]"
 
-python src/generate_data.py   # create the dataset
-python src/eda.py             # exploratory figures
-python src/fraud_model.py     # train + evaluate + metrics.json
-python src/make_plots.py      # all reporting figures
+make all        # generate data, EDA, train, evaluate, save model + figures
+make test       # run the test suite
 ```
 
-Everything is deterministic; you'll reproduce the numbers above exactly.
+Or step by step with the CLI:
+
+```bash
+fraud-detection generate                 # data/transactions.csv
+fraud-detection eda                      # reports/eda_overview.png
+fraud-detection train                    # metrics.json, figures, models/fraud_model.joblib
+fraud-detection score new.csv -o scored.csv   # adds fraud_probability + flag
+```
+
+Everything is seeded, so the numbers above reproduce exactly with the
+dependency versions in `requirements.txt`.
 
 ---
 
 ## Tech stack
 
-`Python` · `pandas` · `NumPy` · `scikit-learn` · `Matplotlib`
+`Python` · `pandas` · `NumPy` · `scikit-learn` · `Matplotlib` · `pytest` · `ruff` · `GitHub Actions`
 
 ## Skills demonstrated
 
 Imbalanced classification · feature engineering · cost-sensitive decision
 thresholds · model evaluation (PR-AUC, precision/recall, confusion matrix) ·
 explainability (permutation importance) · leakage-free pipelines ·
-reproducible, documented code — the core toolkit for **fraud, risk, and
+cross-validated model selection · tested, packaged, CI-checked code ·
+reproducible, documented work — the core toolkit for **fraud, risk, and
 financial-crime analytics**.
