@@ -2,178 +2,163 @@
 
 [![CI](https://github.com/Ehsan-Ghoreishi/fraud-detection/actions/workflows/ci.yml/badge.svg)](https://github.com/Ehsan-Ghoreishi/fraud-detection/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-An end-to-end machine-learning pipeline that flags fraudulent card
-transactions, built the way a **fraud / risk analyst** would actually approach
-it: domain-driven features, honest evaluation for imbalanced data, and a
-**business-cost-based decision threshold** rather than a default 0.5.
+An end-to-end fraud detection system for card transactions, built the way a
+**fraud / risk analytics team** works: point-in-time customer features,
+out-of-time evaluation, a decision threshold set by business cost, a
+benchmark against a rule engine, and a reason code on every alert.
 
 > Built by **Seyedmohammad (Ehsan) Ghoreishi** — a data professional focused on
-> risk, fraud, and financial analytics. This project demonstrates the exact
-> skills used in Customer Risk / Anti-Financial-Crime (AFC) analytics roles at
-> fintechs and banks.
+> risk, fraud, and financial analytics.
 
 ---
 
-## Why this project
+## Results at a glance
 
-Most beginner fraud projects report "99% accuracy" and stop there. On data
-where fraud is ~1.7% of transactions, **a model that never predicts fraud is
-already 98.3% accurate — and completely useless.** The interesting problem in
-fraud is the trade-off between *catching fraud* and *not annoying real
-customers*, and choosing where to draw that line based on cost.
+Trained on January–April, evaluated on **May–June** — two months the model
+never saw, after fraudsters changed tactics:
 
-This project is built around that reality.
-
----
-
-## Headline results
-
-On a held-out test set (25% of data) that played **no part** in feature
-statistics, model selection or threshold tuning:
-
-| Metric | Value | 95% CI | What it means |
-|---|---|---|---|
-| **Fraud caught (recall)** | **97.6%** | 95.7–99.2% | Of all real fraud, we catch nearly all of it |
-| **Precision** | 84.1% | 80.3–87.9% | Of everything we flag, ~5 in 6 are truly fraud |
-| **PR-AUC** | 0.990 | 0.983–0.996 | Ranking quality on the imbalanced positive class |
-| **ROC-AUC** | 0.9998 | | Overall separability |
-| **Traffic flagged** | 2.0% | | Only a small slice needs review |
-| **False alarms per real fraud** | 0.2 | | Very low customer friction |
+| | Value | 95% CI |
+|---|---|---|
+| **Fraud transactions caught** (recall) | **83%** | 80–86% |
+| **Fraudulent value caught** | **92%** | |
+| Precision of alerts | 40% | 38–42% |
+| PR-AUC (fraud rate 0.5%) | 0.73 | 0.70–0.77 |
+| Analyst workload | 16 alerts/day | |
+| **Loss + review cost** | **€9.3k** vs €71.6k with no model | |
+| **vs rule engine, same workload** | **87% vs 62% recall** | |
 
 Confidence intervals come from 1,000 stratified bootstrap resamples of the
-test set — with only 255 frauds in it, point estimates alone overstate
-precision.
+test period.
 
-Concretely, on 15,000 test transactions the model missed **6 frauds out of
-255** while flagging just 47 legitimate transactions for review.
+---
+
+## Why this project is different
+
+Most fraud portfolio projects score near-perfectly on a random split of a
+public dataset. Production fraud doesn't work like that, and this project is
+built around the parts that make it hard:
+
+| Reality | How it is handled here |
+|---|---|
+| "Unusual" is relative to the customer | Behavioural features vs the customer's own history |
+| Features must exist at authorisation time | Point-in-time: each row sees only *earlier* transactions — [tested](tests/test_features.py) |
+| Models are used on the future | Out-of-time test set + forward-chaining CV |
+| Fraudsters adapt | Typology mix and tactics drift in the test period |
+| Not all fraud is reported | Label noise; unreported fraud tracked separately |
+| A €900 miss ≠ a €2 miss | Missed-fraud cost = amount + chargeback fee |
+| "Better than what we have?" | Benchmarked against a rule engine at equal alert volume |
+| Analysts need a *why* | Reason codes for every alert |
+
+---
+
+## The data: a simulated card portfolio
+
+Real payment data is confidential, so [`simulation.py`](src/fraud_detection/simulation.py)
+simulates **2,500 customers over six months (~258k transactions, 0.53%
+fraud)**. Each customer has a spend level, preferred hours, devices (phones
+get replaced), online habits and sometimes a trip abroad, so legitimate
+traffic overlaps heavily with classic fraud signals. Fraud comes in four
+typologies:
+
+| Typology | Footprint |
+|---|---|
+| **Card testing** | Bursts of €0.50–9 online charges from a bot device, then a gift-card / electronics cash-out |
+| **Account takeover** | New device, several purchases at 3–11× the customer's usual spend |
+| **Cloned card** | In-store spending far from home, often abroad |
+| **Stealth** | One purchase that looks like the customer's own |
+
+From May the mix shifts toward account takeover and card testers raise their
+test amounts to dodge small-amount rules.
+
+![EDA Overview](reports/eda_overview.png)
+
+---
+
+## Approach
+
+```
+transaction log ──► point-in-time behaviour features ──► out-of-time split
+                    (velocity, spend vs own median,       train Jan–Apr │ test May–Jun
+                     device age, small-charge bursts)                   │
+                                                                        ▼
+         forward-chaining CV ──► pick model by PR-AUC ──► tune threshold on
+         (3 candidates)                                    out-of-fold cost
+                                                                        │
+                                                                        ▼
+           score test once ──► metrics · rule benchmark · typology/month breakdown
+                                · reason codes · bootstrap CIs
+```
+
+**Models compared** (forward-chaining CV PR-AUC): logistic regression 0.49,
+random forest 0.72, **gradient boosting 0.75** — tree ensembles win because
+fraud lives in interactions ("new device *and* far above usual spend").
 
 ![Precision-Recall Curve](reports/pr_curve.png)
 
 ---
 
-## The idea that makes it a *risk* project, not just a *model*
+## The decision a risk analyst owns: the threshold
 
-A missed fraud and a false alarm do **not** cost the same. Letting fraud
-through costs real money (chargebacks, losses); a false alarm just costs a
-quick review. I encode that asymmetry directly and pick the decision threshold
-that **minimises expected business cost** instead of accepting the default:
-
-```
-Cost = (false negatives × €150) + (false positives × €5)
-```
-
-The threshold is tuned on **out-of-fold predictions from the training set**
-and then frozen — exactly as it would be before going live — and only then
-measured on the test set:
+A missed fraud costs its **amount plus a €20 chargeback fee**; a false alarm
+costs **€5** of analyst time and customer friction. The threshold that
+minimises that cost is found on out-of-fold training predictions and then
+frozen:
 
 ![Cost vs Threshold](reports/cost_curve.png)
 
-The cost-optimal threshold lands at **0.77**. An honest finding from the
-held-out data: the cost curve is almost flat between ~0.5 and ~0.8, and on
-this particular test sample the tuned threshold (€1,135) is no better than
-the default 0.5 (€1,005). The bootstrap interval for that difference is
-−€325 to +€655 — it spans zero, so the two are statistically
-indistinguishable. The lesson for a risk team is that the
-*cost assumptions* move the threshold far more than fine-tuning does — and
-the pipeline re-runs that analysis in one command:
+The cost-optimal threshold is **0.09**, far below the default 0.5. On the
+test period it saves **€3.2k** compared with 0.5 (95% CI €1.3k–€5.5k, so
+not noise). Change the assumptions and the pipeline re-derives it:
 
 ```bash
-fraud-detection train --cost-fn 400 --cost-fp 5   # e.g. higher-value card portfolio
+fraud-detection train --chargeback-fee 40 --cost-fp 12
 ```
 
-> An earlier version of this project tuned the threshold and picked the
-> model on the test set itself, which reported 0.65 / 98.8% recall. See
-> [CHANGELOG.md](CHANGELOG.md) for what changed and why.
-
 ---
 
-## Understanding the data first (EDA)
+## Better than rules?
 
-Before modelling, I looked at *how* fraud actually behaves. The signal is
-strong and intuitive — fraud skews toward nights, new devices, foreign
-countries, higher amounts, and velocity spikes:
+Four rules a fraud team typically starts with (high amount, new device with
+unusual spend, card-testing burst, spending far abroad) raise 2,118 alerts in
+the test period. Given **the same 2,118 alerts**, the model catches:
 
-![EDA Overview](reports/eda_overview.png)
-
-| Signal | Legit | Fraud |
+| | Recall | Precision |
 |---|---|---|
-| Median amount | €20 | €70 |
-| Night transactions (00–05h) | 3.2% | 41.6% |
-| New device | 5.0% | 53.6% |
-| Foreign country | 7.9% | 43.8% |
+| Rule engine | 62% | 14% |
+| **Model** | **87%** | **19%** |
 
 ---
 
-## What the model relies on (explainability)
+## Where it works — and where it doesn't
 
-In a regulated bank you must be able to **justify why a customer was flagged**.
-I use permutation importance (works for any model, measures real predictive
-contribution) rather than opaque built-in scores:
+![Recall by Typology](reports/recall_by_typology.png)
+
+Stealth fraud is almost never caught. It looks like the customer's own
+spending, so no transaction-level model can separate it. That is a finding
+for the business (e.g. cardholder push notifications), not something to
+tune away. Performance also dips in May, the first month after the tactics
+shift (PR-AUC 0.71 vs 0.76 in June).
+
+---
+
+## Every alert explains itself
+
+Model-agnostic reason codes reset one feature group at a time to a typical
+value and report the ones that drive the score
+([sample](reports/sample_alerts.csv)):
+
+| Amount | Category | Reasons | Truth |
+|---|---|---|---|
+| €325.57 | gift cards | recently first-seen device; small test charges in the last hour; unusual amount for this customer | card testing |
+| €149.11 | jewelry | far from home; large amount; risky merchant category | cloned card |
+| €269.43 | travel | recently first-seen device; high spend in the last day; large amount | account takeover |
+
+Global explanation via permutation importance (device age, merchant risk,
+distance and new-device flags lead):
 
 ![Feature Importance](reports/feature_importance.png)
-
-Importance is the drop in PR-AUC when a feature is shuffled on the test set.
-Merchant risk and distance-from-home dominate — consistent with how real card
-fraud presents.
-
-![Confusion Matrix](reports/confusion_matrix.png)
-
-One more thing a risk team should know: because of class weighting, the
-model's outputs are **scores, not probabilities** — a score of 0.7 means
-roughly a 5–10% observed fraud rate. Ranking and the cost-tuned flag are
-unaffected; see the calibration section of the
-[model card](docs/model_card.md).
-
----
-
-## Engineering choices worth calling out
-
-- **Stratified train/test split** so both sets keep the true fraud ratio.
-- **No data leakage** — every learned statistic (feature cut-offs, scaling)
-  lives inside an sklearn `Pipeline`, and the model choice and decision
-  threshold come from 5-fold cross-validation on the training split. The
-  test set is scored exactly once.
-- **Imbalance handled with `class_weight="balanced"`**, not naive oversampling
-  that would leak synthetic rows into evaluation.
-- **Two models compared** (logistic regression vs random forest) and selected
-  by out-of-fold **PR-AUC**, the correct metric for rare-event detection.
-- **Deployable artefact** — the fitted pipeline is saved together with its
-  threshold, and `fraud-detection score` applies it to new transactions.
-- **Tested and reproducible** — fixed seeds, a pytest suite and CI on
-  Python 3.10–3.12; one command regenerates every number and figure.
-
----
-
-## Project structure
-
-```
-fraud-detection/
-├── src/fraud_detection/
-│   ├── config.py        # paths, seed, cost assumptions
-│   ├── data.py          # realistic synthetic transactions (real fraud patterns)
-│   ├── features.py      # domain features + leakage-safe FraudFeatures transformer
-│   ├── models.py        # candidate pipelines
-│   ├── evaluation.py    # cost curve and threshold selection
-│   ├── model.py         # CV model selection, threshold tuning, test evaluation
-│   ├── scoring.py       # save/load model bundle, score new transactions
-│   ├── eda.py           # exploratory analysis + overview figure
-│   ├── plots.py         # reporting figures
-│   └── cli.py           # `fraud-detection` command
-├── tests/               # pytest suite
-├── notebooks/           # step-by-step walkthrough
-├── reports/             # generated metrics.json + figures
-├── docs/model_card.md   # intended use, limitations, evaluation
-├── Makefile
-├── LICENSE              # MIT
-└── pyproject.toml
-```
-
-> **Note on data:** real payment data is confidential, so this repo generates a
-> synthetic dataset that reproduces the statistical patterns of genuine card
-> fraud (imbalance, night-time skew, velocity, geography). The modelling
-> pipeline is identical to what you'd run on real data — only the source
-> changes.
 
 ---
 
@@ -182,37 +167,59 @@ fraud-detection/
 ```bash
 pip install -e ".[dev]"
 
-make all        # generate data, EDA, train, evaluate, save model + figures
-make test       # run the test suite
+make all        # simulate data, EDA, train, evaluate, save model + reports (~1.5 min)
+make test       # 45 tests
 ```
 
-Or step by step with the CLI:
+Or step by step:
 
 ```bash
-fraud-detection generate                 # data/transactions.csv
-fraud-detection eda                      # reports/eda_overview.png
-fraud-detection train                    # metrics.json, figures, models/fraud_model.joblib
-fraud-detection score new.csv -o scored.csv   # adds fraud_probability + flag
+fraud-detection generate                        # data/transactions.csv
+fraud-detection eda                             # reports/eda_overview.png
+fraud-detection train                           # metrics.json, figures, models/fraud_model.joblib
+fraud-detection score log.csv -o scored.csv     # fraud_probability, flag, reasons
 ```
 
-Everything is seeded, so the numbers above reproduce exactly with the
-dependency versions in `requirements.txt`.
+Everything is seeded; `make all` reproduces every number above.
 
 ---
 
+## Project structure
+
+```
+src/fraud_detection/
+├── simulation.py   # customer-level transaction simulator (typologies, drift, label noise)
+├── features.py     # point-in-time behaviour features + FraudFeatures transformer
+├── validation.py   # out-of-time split, forward-chaining CV
+├── models.py       # logistic regression, random forest, gradient boosting
+├── evaluation.py   # cost curve, threshold, bootstrap CIs, value recall
+├── rules.py        # rule-engine baseline
+├── explain.py      # per-alert reason codes
+├── model.py        # training & evaluation pipeline
+├── scoring.py      # model bundle persistence, batch scoring
+├── eda.py · plots.py · cli.py · data.py · config.py
+tests/              # 45 tests incl. look-ahead and leakage checks
+notebooks/          # step-by-step walkthrough
+reports/            # metrics.json, figures, sample alerts
+docs/model_card.md  # intended use, evaluation, limitations
+```
+
+See the [model card](docs/model_card.md) for limitations and the
+[changelog](CHANGELOG.md) for how the project evolved.
+
 ## Tech stack
 
-`Python` · `pandas` · `NumPy` · `scikit-learn` · `Matplotlib` · `pytest` · `ruff` · `GitHub Actions`
+`Python` · `pandas` · `NumPy` · `scikit-learn` · `Matplotlib` · `pytest` ·
+`ruff` · `GitHub Actions`
 
 ## Skills demonstrated
 
-Imbalanced classification · feature engineering · cost-sensitive decision
-thresholds · model evaluation (PR-AUC, precision/recall, confusion matrix) ·
-explainability (permutation importance) · leakage-free pipelines ·
-cross-validated model selection · bootstrap confidence intervals ·
-calibration analysis · tested, packaged, CI-checked code ·
-reproducible, documented work — the core toolkit for **fraud, risk, and
-financial-crime analytics**.
+Fraud typologies and behavioural feature design · point-in-time feature
+engineering · out-of-time and forward-chaining validation · imbalanced
+classification · gradient boosting · cost-sensitive decision thresholds ·
+rule-engine benchmarking · explainability (reason codes, permutation
+importance) · uncertainty quantification (bootstrap) · calibration analysis ·
+tested, packaged, CI-checked code.
 
 ## License
 
