@@ -40,6 +40,12 @@ from fraud_detection.validation import (
 log = logging.getLogger(__name__)
 
 
+def _span_days(df: pd.DataFrame) -> float:
+    """Covered period in (fractional) days, at least one hour."""
+    span = df["timestamp"].max() - df["timestamp"].min()
+    return max(span.total_seconds() / 86_400, 1 / 24)
+
+
 def split_with_embargo(enriched: pd.DataFrame, test_start,
                        label_delay_days: float):
     """Return ``(train, embargo, test, cut)`` from a time-sorted frame.
@@ -60,8 +66,7 @@ def split_with_embargo(enriched: pd.DataFrame, test_start,
 def cv_gap_rows(train: pd.DataFrame, label_delay_days: float,
                 cv_folds: int) -> int:
     """The label-delay embargo expressed in rows, for forward-chaining CV."""
-    span_days = (train["timestamp"].max() - train["timestamp"].min()).days or 1
-    gap = int(round(label_delay_days * len(train) / span_days))
+    gap = int(round(label_delay_days * len(train) / _span_days(train)))
     # on short histories a full embargo leaves no room for the folds; keep
     # at least 5% of the rows for the first (earliest) training window
     n = len(train)
@@ -154,7 +159,7 @@ def evaluate_test(test: pd.DataFrame, proba, threshold: float,
         "test_brier": round(brier_score_loss(y_test, proba), 5),
     }
     tn, fp, fn, tp = confusion_matrix(y_test, flagged).ravel()
-    test_days = test["timestamp"].dt.normalize().nunique()
+    test_days = _span_days(test)
     recall, precision = tp / max(tp + fn, 1), tp / max(tp + fp, 1)
     caught_value = value_recall(y_test, flagged, test["amount"])
     log.info(f"Test PR-AUC {ranking['test_pr_auc']:.3f} | "

@@ -99,3 +99,13 @@ def test_forward_chaining_reports_fold_of_each_prediction():
     assert folds[20:].tolist() == sorted(folds[20:].tolist())
     assert set(folds[20:]) == {0, 1, 2, 3}
     assert np.isnan(oof[folds == -1]).all()
+
+
+def test_protocol_measures_time_in_fractional_days():
+    from fraud_detection.protocol import _span_days, cv_gap_rows
+
+    df = pd.DataFrame({"timestamp": pd.date_range("2026-01-01", periods=37,
+                                                  freq="h")})   # 36 hours
+    assert _span_days(df) == 1.5
+    # a quarter-day embargo is a sixth of a 1.5-day history
+    assert cv_gap_rows(pd.concat([df] * 100), 0.25, cv_folds=2) == 617
