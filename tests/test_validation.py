@@ -53,3 +53,12 @@ def test_forward_chaining_only_trains_on_the_past():
     assert predicted[20:].all()
     # every prediction came from a model that saw only earlier rows
     assert (oof[predicted] * 1000 < df.x[predicted]).all()
+
+
+def test_forward_chaining_skips_folds_without_fraud():
+    df = _frame(100).assign(y=lambda d: d.index >= 60)
+    oof = forward_chaining_oof(_RecordsTrainingRange(), df[["x"]], df["y"],
+                               n_splits=4)
+    # folds trained on rows < 60 have a single class and are left out
+    assert np.isnan(oof[:80]).all()
+    assert not np.isnan(oof[80:]).any()
