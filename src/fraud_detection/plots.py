@@ -165,7 +165,7 @@ def plot_feature_importance(feature_importance: list[dict], path: Path) -> None:
     fig, ax = plt.subplots(figsize=(6.5, 4.5))
     ax.barh(names, vals, color=NAVY)
     ax.set_xlabel("Drop in PR-AUC when shuffled")
-    ax.set_title("Top Fraud Signals (permutation importance)")
+    ax.set_title("Top Fraud Signals")
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
