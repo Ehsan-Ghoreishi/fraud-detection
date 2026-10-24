@@ -10,6 +10,7 @@
 | **Selection criterion** | Forward-chaining CV PR-AUC, computed per fold and averaged; every fold model sees ≥ 50% of the history |
 | **Selected (simulated track)** | Random forest on 27 features |
 | **Selected (ULB real data)** | Gradient boosting on 30 features |
+| **Selected (IEEE-CIS real data)** | Gradient boosting on Vesta's columns plus behaviour features |
 | **Artefact** | `models/fraud_model.joblib` — fitted pipeline, threshold, reason-code reference, package version |
 
 ## Intended use
@@ -81,6 +82,8 @@ data (IEEE-CIS).
 6. **Score the test period once.** Intervals: 1,000 bootstrap resamples of
    customers (transactions on ULB, which has no customer IDs). Runner-up
    models are also scored on test as a diagnostic, never for decisions.
+   The ranking is also read at fixed alert budgets (0.5%, 1%, 2%, 5% of
+   traffic), the volumes a fixed-size review team can work.
 
 ## Results — simulated track (test: May–June)
 
@@ -134,18 +137,37 @@ the transferred threshold flags too much legitimate traffic and costs
 
 ## Results — IEEE-CIS
 
-The pipeline (`fraud_detection.ieee`) is implemented and tested on a
-fixture with the IEEE-CIS schema. Results are produced with `make ieee`
-once the Kaggle competition rules are accepted. Reported metrics include
-the behaviour-feature ablation, performance on clients unseen before the
-test period, attack-level detection and family-level importance.
+## Results — IEEE-CIS real data (test: April–May 2018)
+
+Train to 17 March 2018 (371,853 txns), 14-day embargo, test 175,998 txns;
+217,779 reconstructed clients.
+
+| Metric | Value |
+|---|---|
+| PR-AUC (gradient boosting) | 0.515 (95% clustered CI 0.488 – 0.542); CV 0.522 |
+| ROC-AUC | 0.892 |
+| Ablation without behaviour features | CV 0.521, test 0.516 |
+| Logistic regression (diagnostic) | CV 0.359, test 0.233 |
+| Clients unseen before the test period (104,922 txns) | PR-AUC 0.559, recall 89% |
+| Compromised accounts detected | 90.5% of 2,613; 88% on the first fraud |
+| Deployed threshold | 0.18: recall 85.4%, precision 11.2%, 26% of traffic flagged |
+| Cost at threshold / at 0.5 / no model | €334k / €440k / €1.07M; regret €9.1k |
+| At a 1% / 5% alert budget | recall 25.5% / 55.8%, precision 88% / 39% |
+| Rule engine at equal volume (8,024 alerts) | rules 9%, model 54% recall |
+
+Importance is dominated by Vesta's V and C families. Our behaviour features
+carry 0.3% of it and add +0.001 CV PR-AUC: Vesta's C/D columns already hold
+per-card counts and time deltas. The cost-optimal threshold flags 26% of
+traffic, which no review team can work; the alert-budget figures are the
+operational ones.
 
 ## Explainability
 
 - **Per alert**: reason codes (`explain.py`). Each feature group is reset
   to a typical training value, and the groups that lower the score most are
   reported in plain language. Correlated features (device age and
-  new-device flag) form one group. Sample: `reports/sample_alerts.csv`.
+  new-device flag) form one group. Sample: `reports/sample_alerts.csv` (the IEEE-CIS sample is generated
+  locally only, as it contains licensed rows).
 - **Global**: permutation importance on the test period; on IEEE-CIS by
   feature family, since hundreds of correlated columns make per-column
   importance meaningless.
@@ -168,6 +190,14 @@ the threshold) if calibrated probabilities are needed.
   fails with six hours of a strongly time-of-day-dependent day (ULB). Use
   an anchor spanning at least one full weekly cycle and monitor alert
   volume daily.
+- **Cost-optimal is not capacity-feasible.** With cheap reviews (€5)
+  and a 3.4% fraud rate (IEEE-CIS), the cost-optimal threshold flags 26%
+  of traffic. Set the threshold from review capacity, or price reviews to
+  include analyst time, and report recall at that alert budget.
+- **Feature engineering can be redundant.** Behaviour features that are
+  the strongest signals on the simulated data add nothing on IEEE-CIS,
+  whose vendor columns already encode them. The ablation candidate is kept
+  for that reason.
 - **Model selection is noisy** when candidates are within fold-to-fold
   variation. Prefer the simpler or more stable model in that case, or
   ensemble the candidates.
