@@ -30,12 +30,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from sklearn.inspection import permutation_importance
-from sklearn.metrics import (
-    average_precision_score,
-    brier_score_loss,
-    confusion_matrix,
-    roc_auc_score,
-)
+from sklearn.metrics import average_precision_score
 
 from fraud_detection.config import (
     CHARGEBACK_FEE,
@@ -49,24 +44,20 @@ from fraud_detection.config import (
     THRESHOLD_FOLDS,
 )
 from fraud_detection.data import load_transactions
-from fraud_detection.evaluation import (
-    bootstrap_ci,
-    choose_threshold,
-    cost_curve,
-    episode_metrics,
-    rate_matched_threshold,
-    value_recall,
-)
+from fraud_detection.evaluation import episode_metrics, value_recall
 from fraud_detection.explain import describe, reason_codes, reference_row
 from fraud_detection.features import FEATURES, RAW_COLUMNS, add_behavioural_features
 from fraud_detection.models import build_models
+from fraud_detection.protocol import (
+    cv_gap_rows,
+    deploy_threshold,
+    evaluate_test,
+    select_model,
+    split_with_embargo,
+    tune_alert_rate,
+)
 from fraud_detection.rules import compare_with_rules
 from fraud_detection.simulation import FRAUD_TYPES
-from fraud_detection.validation import (
-    apply_label_delay,
-    forward_chaining_oof,
-    out_of_time_split,
-)
 
 log = logging.getLogger(__name__)
 
@@ -92,113 +83,33 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     raw = load_transactions(data_path) if data is None else data
     enriched = add_behavioural_features(raw).sort_values(
         ["timestamp", "transaction_id"], kind="stable").reset_index(drop=True)
-    train, test, cut = out_of_time_split(enriched, test_start)
-    labelled = apply_label_delay(train, cut, label_delay_days)
-    # the embargo window: transactions already seen at deployment time but
-    # still unlabelled — used (scores only) to place the threshold
-    embargo = train.loc[train.index.difference(labelled.index)]
-    train = labelled
+    train, embargo, test, cut = split_with_embargo(enriched, test_start,
+                                                   label_delay_days)
     X_train, y_train = train[RAW_COLUMNS], train["is_fraud"]
     X_test, y_test = test[RAW_COLUMNS], test["is_fraud"]
-    log.info("Train: %s txns to %s | %g-day label-delay embargo | "
-             "Test: %s txns from %s (out of time)", f"{len(train):,}",
-             train["timestamp"].max().date(), label_delay_days,
-             f"{len(test):,}", cut.date())
-    # the same embargo between every CV training window and its validation
-    # window, expressed in rows
-    span_days = (train["timestamp"].max() - train["timestamp"].min()).days or 1
-    cv_gap = int(round(label_delay_days * len(train) / span_days))
-    # on short histories a full embargo leaves no room for the folds; keep
-    # at least 5% of the rows for the first (earliest) training window
-    n = len(train)
-    max_gap = n - cv_folds * (n // (cv_folds + 1)) - int(0.05 * n)
-    if cv_gap > max_gap:
-        log.warning("CV label-delay gap capped at %d rows (wanted %d): "
-                    "training history is short", max_gap, cv_gap)
-        cv_gap = max_gap
 
-    # ---- model selection on forward-chaining out-of-fold predictions -------
     candidates = build_models(random_state)
     if models:
         candidates = {k: candidates[k] for k in models}
-    results, oof, folds = {}, {}, {}
-    for name, model in candidates.items():
-        oof[name], folds[name] = forward_chaining_oof(
-            model, X_train, y_train, cv_folds, gap=cv_gap, return_folds=True)
-        seen = ~np.isnan(oof[name])
-        pr_auc = average_precision_score(y_train[seen], oof[name][seen])
-        roc_auc = roc_auc_score(y_train[seen], oof[name][seen])
-        results[name] = {"cv_pr_auc": round(pr_auc, 4),
-                         "cv_roc_auc": round(roc_auc, 4)}
-        log.info(f"{name:>22} | CV PR-AUC {pr_auc:.4f} | CV ROC-AUC {roc_auc:.4f}")
-    best_name = max(results, key=lambda k: results[k]["cv_pr_auc"])
-    log.info(f"\nBest model by CV PR-AUC: {best_name}")
+    best_name, results, oof, folds = select_model(
+        candidates, X_train, y_train, cv_folds,
+        gap=cv_gap_rows(train, label_delay_days, cv_folds))
 
-    # ---- cost-based threshold, tuned on the same out-of-fold predictions ---
-    # Fold models are trained on less (and older) history than the final
-    # model, so their scores sit on a different scale and a raw score
-    # threshold does not transfer. The cost-optimal *alert rate* does: tune
-    # on the most recent folds, then place the cut-off at the same rate on
-    # the final model's scores for the unlabelled embargo window.
-    fn_cost_train = train["amount"].to_numpy() + chargeback_fee
-    recent = folds[best_name] >= cv_folds - threshold_folds
-    if not y_train[recent].any():           # too little fraud: use all folds
-        recent = folds[best_name] >= 0
-    threshold_cv, _ = choose_threshold(y_train[recent], oof[best_name][recent],
-                                       cost_fn=fn_cost_train[recent],
-                                       cost_fp=cost_fp)
-    target_rate = float((oof[best_name][recent] >= threshold_cv).mean())
-
-    # ---- refit on all training data, evaluate once on the future -----------
+    threshold_cv, target_rate, recent = tune_alert_rate(
+        y_train, oof[best_name], folds[best_name],
+        train["amount"].to_numpy() + chargeback_fee, cost_fp, cv_folds,
+        threshold_folds)
     best_model = candidates[best_name].fit(X_train, y_train)
-    if len(embargo) and 0 < target_rate < 1:
-        threshold = rate_matched_threshold(
-            best_model.predict_proba(embargo[RAW_COLUMNS])[:, 1], target_rate)
-        threshold_method = "alert_rate_transfer"
-    else:                                   # no embargo window to anchor on
-        threshold, threshold_method = threshold_cv, "cv_score"
-    log.info(f"Threshold {threshold:.4f} ({threshold_method}): cost-optimal "
-             f"alert rate {target_rate:.2%} from the last {threshold_folds} "
-             f"folds (CV-scale threshold {threshold_cv:.4f})")
+    threshold, threshold_method = deploy_threshold(
+        best_model, embargo[RAW_COLUMNS], target_rate, threshold_cv,
+        threshold_folds)
+
     proba = best_model.predict_proba(X_test)[:, 1]
-    flagged = proba >= threshold
-    fn_cost_test = test["amount"].to_numpy() + chargeback_fee
-
-    results[best_name].update({
-        "test_pr_auc": round(average_precision_score(y_test, proba), 4),
-        "test_roc_auc": round(roc_auc_score(y_test, proba), 4),
-        "test_brier": round(brier_score_loss(y_test, proba), 5),
-    })
-    tn, fp, fn, tp = confusion_matrix(y_test, flagged).ravel()
-    test_days = test["timestamp"].dt.normalize().nunique()
-    recall, precision = tp / max(tp + fn, 1), tp / max(tp + fp, 1)
-    caught_value = value_recall(y_test, flagged, test["amount"])
-    log.info(f"Test PR-AUC {results[best_name]['test_pr_auc']:.3f} | "
-             f"recall {recall:.1%} | precision {precision:.1%} | "
-             f"fraud value caught {caught_value:.1%} | "
-             f"{(tp + fp) / test_days:.0f} alerts/day")
-
-    costs = cost_curve(y_test, proba, fn_cost_test, cost_fp,
-                       thresholds=[threshold, 0.5])["cost"]
-    cost_at_threshold, cost_at_default = map(float, costs)
-    no_model_cost = float(fn_cost_test[y_test.to_numpy() == 1].sum())
-    # regret: how much a perfectly hindsight-tuned threshold would have saved
-    oracle_threshold, oracle_table = choose_threshold(y_test, proba,
-                                                      fn_cost_test, cost_fp)
-    oracle_cost = float(oracle_table["cost"].min())
-    cv_scale_cost = float(cost_curve(y_test, proba, fn_cost_test, cost_fp,
-                                     thresholds=[threshold_cv])["cost"][0])
-    log.info(f"Test cost €{cost_at_threshold:,.0f} at {threshold:.3f} "
-             f"(€{cost_at_default:,.0f} at 0.50, €{no_model_cost:,.0f} "
-             f"with no model) | regret vs hindsight-optimal {oracle_threshold:.3f}: "
-             f"€{cost_at_threshold - oracle_cost:,.0f}")
-
-    # resample whole customers: a fraud burst on one card is one event
-    ci = bootstrap_ci(y_test, proba, threshold, fn_cost_test, cost_fp,
-                      seed=random_state, groups=test["customer_id"])
-    log.info("95%% CI  PR-AUC %s | recall %s | precision %s",
-             ci["pr_auc"], ci["recall"], ci["precision"])
-
+    ev = evaluate_test(test, proba, threshold, threshold_cv, chargeback_fee,
+                       cost_fp, groups=test["customer_id"], seed=random_state)
+    flagged = ev["flagged"]
+    results[best_name].update(ev["ranking"])
+    cost = ev["business_cost"]
     summary = {
         "data": {
             "train_transactions": len(train), "test_transactions": len(test),
@@ -210,31 +121,22 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
         },
         "models": results,
         "best_model": best_name,
-        "cost_optimal_threshold": round(threshold, 4),
-        "recall_fraud": round(recall, 3),
-        "precision_fraud": round(precision, 3),
-        "value_recall": round(caught_value, 3),
-        "flagged_rate": round(float(flagged.mean()), 4),
-        "alerts_per_day": round((tp + fp) / test_days, 1),
-        "confusion_matrix": {"tn": int(tn), "fp": int(fp),
-                             "fn": int(fn), "tp": int(tp)},
+        **ev["operating_point"],
         "business_cost": {
-            "chargeback_fee": chargeback_fee,
-            "cost_false_positive": cost_fp,
-            "test_cost_at_threshold": cost_at_threshold,
-            "test_cost_at_default_0_5": cost_at_default,
-            "test_cost_without_model": no_model_cost,
-            "test_savings_vs_no_model": no_model_cost - cost_at_threshold,
+            **{k: cost[k] for k in ("chargeback_fee", "cost_false_positive",
+                                    "test_cost_at_threshold",
+                                    "test_cost_at_default_0_5",
+                                    "test_cost_without_model",
+                                    "test_savings_vs_no_model")},
             "threshold_method": threshold_method,
             "threshold_tuned_on_folds": threshold_folds,
             "target_alert_rate": round(target_rate, 5),
-            "threshold_cv_scale": threshold_cv,
-            "test_cost_at_cv_scale_threshold": cv_scale_cost,
-            "test_oracle_threshold": oracle_threshold,
-            "test_cost_at_oracle": oracle_cost,
-            "threshold_regret": cost_at_threshold - oracle_cost,
+            **{k: cost[k] for k in ("threshold_cv_scale",
+                                    "test_cost_at_cv_scale_threshold",
+                                    "test_oracle_threshold",
+                                    "test_cost_at_oracle", "threshold_regret")},
         },
-        "confidence_intervals_95": ci,
+        "confidence_intervals_95": ev["confidence_intervals_95"],
     }
 
     # Explainability is non-negotiable in risk: permutation importance
