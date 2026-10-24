@@ -112,18 +112,18 @@ def plot_cost_curve(train, test, threshold, chargeback_fee, cost_fp,
                     path: Path, threshold_cv: float | None = None) -> None:
     """Cost per 1,000 transactions on CV (where tuned) and test data.
 
-    ``train`` carries ``oof_proba`` (NaN where no fold predicted it) and
-    ``test`` carries ``proba``; a missed fraud costs amount + fee.
+    ``train`` carries ``oof_proba`` and ``threshold_fold`` (rows of the
+    folds the threshold was tuned on); ``test`` carries ``proba``. A missed
+    fraud costs amount + fee.
     """
-    seen = train["oof_proba"].notna()
-    tr = train[seen]
+    tr = train[train["threshold_fold"]]
     cv_table = cost_curve(tr["is_fraud"], tr["oof_proba"],
                           tr["amount"] + chargeback_fee, cost_fp)
     test_table = cost_curve(test["is_fraud"], test["proba"],
                             test["amount"] + chargeback_fee, cost_fp)
     fig, ax = plt.subplots(figsize=(6.5, 4.5))
     ax.plot(cv_table["threshold"], cv_table["cost"] / len(tr) * 1000,
-            color=ACCENT, lw=2.5, label="Train (out-of-fold) — used to tune")
+            color=ACCENT, lw=2.5, label="Recent CV folds — used to tune")
     ax.plot(test_table["threshold"], test_table["cost"] / len(test) * 1000,
             color=NAVY, lw=1.5, alpha=0.7, label="Test (out of time)")
     if threshold_cv is not None:
