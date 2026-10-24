@@ -47,7 +47,10 @@ def test_every_typology_appears(sim):
 
 def test_typology_footprints(sim):
     by = sim[sim.fraud_type != "none"].groupby("fraud_type")
-    assert by.foreign_country.mean()["cloned_card"] == 1
+    assert 0 < by.foreign_country.mean()["cloned_card"] < 1
+    assert by.distance_from_home.min()["cloned_card"] >= 30
+    assert (by.channel.agg(lambda c: (c == "in_store").mean())["cloned_card"]
+            == 1)
     assert by.foreign_country.mean()["stealth"] == 0
     assert (by.channel.agg(lambda c: (c == "online").mean())["card_testing"]
             == 1)

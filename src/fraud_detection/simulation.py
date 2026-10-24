@@ -16,7 +16,7 @@ whose difficulty resembles production fraud data rather than a textbook:
   ==================  ======================================================
   ``card_testing``    bursts of tiny online charges, then a large cash-out
   ``account_takeover`` new device, several purchases far above usual spend
-  ``cloned_card``     in-store spending abroad over a day or two
+  ``cloned_card``     in-store spending far from home (often abroad)
   ``stealth``         one purchase that looks like the customer's own
   ==================  ======================================================
 
@@ -314,11 +314,14 @@ def _cloned_card(ep, cid, cust, start, late, rng):
     n = rng.integers(2, 7)
     t = int(start) + (_pick_hours(n, _DAY_HOURS, rng) + rng.random(n)) / 24
     t = np.sort(t + rng.integers(0, 2, n))
+    # skimmed cards are often cashed out domestically, in another city
+    abroad = rng.random() < 0.6
+    distance = rng.uniform(800, 6000, n) if abroad else rng.uniform(30, 400, n)
     return _frame(
         ep, cid, t,
         rng.choice(["electronics", "jewelry", "restaurant", "fuel"], n),
-        np.zeros(n, bool), "", True,
-        rng.uniform(800, 6000, n), rng.lognormal(4.9, 0.8, n), "cloned_card")
+        np.zeros(n, bool), "", abroad,
+        distance, rng.lognormal(4.9, 0.8, n), "cloned_card")
 
 
 def _stealth(ep, cid, cust, start, late, rng):
