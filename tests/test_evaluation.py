@@ -1,6 +1,11 @@
 import numpy as np
 
-from fraud_detection.evaluation import bootstrap_ci, choose_threshold, cost_curve
+from fraud_detection.evaluation import (
+    bootstrap_ci,
+    choose_threshold,
+    cost_curve,
+    value_recall,
+)
 
 
 def test_cost_curve_counts_errors():
@@ -60,3 +65,28 @@ def test_bootstrap_ci_brackets_point_estimate():
     same = bootstrap_ci(y, proba, threshold=0.5, baseline_threshold=0.5,
                         n_boot=50)
     assert same["cost_vs_baseline"] == [0.0, 0.0]
+
+
+def test_per_transaction_miss_costs():
+    y = np.array([1, 1, 0])
+    proba = np.array([0.9, 0.2, 0.1])
+    table = cost_curve(y, proba, cost_fn=np.array([500.0, 3.0, 0.0]),
+                       cost_fp=1, thresholds=[0.05, 0.5, 0.95])
+    # at 0.5 only the cheap €3 fraud is missed; at 0.95 both are
+    assert table.cost.tolist() == [1, 3, 503]
+
+
+def test_expensive_frauds_pull_the_threshold_down():
+    # catching the fraud means also flagging two legit txns scored the same
+    y = np.array([1, 0, 0])
+    proba = np.array([0.3, 0.3, 0.3])
+    cheap, _ = choose_threshold(y, proba, cost_fn=np.array([1.0, 0, 0]),
+                                cost_fp=1)
+    pricey, _ = choose_threshold(y, proba, cost_fn=np.array([900.0, 0, 0]),
+                                 cost_fp=1)
+    assert pricey <= 0.3 < cheap
+
+
+def test_value_recall():
+    y = np.array([1, 1, 0])
+    assert value_recall(y, [1, 0, 1], [300.0, 100.0, 50.0]) == 0.75
