@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=84.2.1", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -11,15 +11,15 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Seyedmohammad (Ehsan) Ghoreishi" }]
 dependencies = [
-    "pandas>=2.0,<4",
-    "numpy>=1.24,<3",
-    "scikit-learn>=1.3,<2",
-    "matplotlib>=3.7,<4",
-    "joblib>=1.3",
+    "pandas>=2.3.3,<4",
+    "numpy>=2.2.6,<3",
+    "scikit-learn>=1.7.2,<2",
+    "matplotlib>=3.10.9,<4",
+    "joblib>=1.6.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6", "pre-commit>=3"]
+dev = ["pytest>=9.1.1", "ruff>=0.17.1", "pre-commit>=4.6.2"]
 
 [project.scripts]
 fraud-detection = "fraud_detection.cli:main"
