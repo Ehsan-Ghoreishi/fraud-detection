@@ -4,10 +4,19 @@
 ![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-An end-to-end fraud detection system for card transactions, built the way a
-**fraud / risk analytics team** works: point-in-time customer features,
-out-of-time evaluation, a decision threshold set by business cost, a
-benchmark against a rule engine, and a reason code on every alert.
+A fraud detection system for card transactions, built the way a **fraud /
+risk analytics team** works: point-in-time customer features, out-of-time
+evaluation with a label-delay embargo, a decision threshold set by business
+cost, a benchmark against a rule engine, and a reason code on every alert.
+
+One evaluation protocol ([`protocol.py`](src/fraud_detection/protocol.py))
+runs on three data tracks:
+
+| Track | Data | What it is for |
+|---|---|---|
+| **Real: ULB** | 284,807 European card transactions (Sept 2013), 492 frauds | Real-data check of the protocol |
+| **Real: IEEE-CIS** | 590,540 Vesta e-commerce transactions, 3.5% fraud | Full pipeline on real data incl. behaviour features (run with a Kaggle licence) |
+| **Simulated portfolio** | 2,500 customers, 6 months, 4 fraud typologies, drift | What real data can't show: ground truth per typology, unreported fraud |
 
 > Built by **Seyedmohammad (Ehsan) Ghoreishi** — a data professional focused on
 > risk, fraud, and financial analytics.
@@ -16,58 +25,147 @@ benchmark against a rule engine, and a reason code on every alert.
 
 ## Results at a glance
 
-Trained on labelled history up to 16 April, deployed on 1 May, evaluated on
-**May–June** — two months the model never saw, after fraudsters changed
-tactics:
+All numbers are measured on an **out-of-time** test period that played no
+part in feature statistics, model selection or threshold tuning.
 
-| | Value | 95% CI |
+| | Real: ULB | Simulated portfolio |
 |---|---|---|
-| **Attacks stopped** (account takeover / card testing / cloned card) | **99% / 100% / 100%** | |
-| **Fraudulent value caught** | **93%** | |
-| Fraud value lost before the first alert | 8.6% | |
-| Fraud transactions caught (recall) | 83% | 79–87% |
-| Precision of alerts | 35% | 30–40% |
-| PR-AUC (fraud rate 0.5%) | 0.75 | 0.69–0.79 |
-| Analyst workload | 18 alerts/day | |
-| **Loss + review cost** | **€9.5k** vs €71.6k with no model | |
-| **vs rule engine, same workload** | **88% vs 62% recall** | |
+| Test period | last 12 of 48 hours | May–June (2 months) |
+| Selected model (by CV) | gradient boosting | random forest |
+| **PR-AUC** (95% CI) | **0.78** (0.71–0.84) | **0.65** (0.59–0.70) |
+| Fraud base rate | 0.12% | 0.53% |
+| Recall at deployed threshold | 83% | 83% |
+| Fraudulent value caught | 76% | 92% |
+| Cost vs no model | €6.5k vs €18.7k | €9.7k vs €71.6k |
+| Attacks stopped (ATO / card testing / cloned) | n/a: no card IDs | 96% / 100% / 100% |
+| vs rule engine at same workload | n/a: fields missing | 87% vs 62% recall |
 
-Confidence intervals come from 1,000 bootstrap resamples **of customers**:
-fraud arrives in bursts on the same card, so resampling single transactions
-would make the intervals look tighter than they are.
+---
+
+## Real data
+
+### ULB credit card data
+
+Real transactions by European cardholders, released by the ULB Machine
+Learning Group (Dal Pozzolo et al.) and fetched from OpenML
+([`ulb.py`](src/fraud_detection/ulb.py)). The features are anonymised PCA
+components (V1–V28) plus time and amount; there are **no card or customer
+IDs**, so behaviour features and attack-level metrics can't be computed.
+The protocol still can: train on the first 36 hours, test on the last 12.
+
+| | Value |
+|---|---|
+| Gradient boosting test PR-AUC | **0.777** (95% CI 0.705–0.842) |
+| Logistic regression (diagnostic) | 0.744 |
+| Recall / precision at the deployed threshold | 83.5% / 18.0% |
+| Top signals | V14, V17, V4, V12 (matching the literature) |
+
+**An honest failure, reported as is.** The threshold is carried from CV to
+the final model as an alert rate, anchored on the embargo window (see
+[below](#the-decision-a-risk-analyst-owns-the-threshold)). On ULB that
+window is the morning of day 2, when the fraud rate (0.075%) was a third of
+the training period's. The anchor therefore set the threshold too low:
+**€6.5k vs €5.1k at 0.5** or at the CV-scale threshold. Anchoring assumes
+a stable fraud rate, and 48 hours with strong time-of-day effects can't
+provide a representative window. On the simulated track, where the anchor
+covers two full weeks, the same method has a regret of only €62.
+
+```bash
+make ulb          # downloads from OpenML, writes reports/ulb/
+```
+
+### IEEE-CIS (Vesta) — full pipeline on real data
+
+[`ieee/`](src/fraud_detection/ieee) runs the complete pipeline, behaviour
+features included, on the IEEE-CIS Fraud Detection data:
+
+- **Client reconstruction.** There is no customer ID, so a client is
+  identified by card + billing address + account start day (transaction
+  day − D1), the approach validated by top competition solutions. The same
+  point-in-time behaviour features as the simulated track then run on it.
+- **Ablation.** The same gradient boosting model without our behaviour
+  features measures what that feature engineering adds over Vesta's ~430
+  columns.
+- **Clients never seen before.** Fraud labels in this data propagate across
+  a compromised account, so a model can score well by recognising known
+  accounts. Performance on clients new in the test period is reported
+  separately.
+- Family-level permutation importance and reason codes (C, D, M, V, card,
+  email, device, identity, behaviour), plus attack-level detection, recall
+  by product, rule benchmark and clustered confidence intervals.
+
+The data's licence forbids redistribution, so it is downloaded with the
+Kaggle API after you accept the
+[competition rules](https://www.kaggle.com/competitions/ieee-fraud-detection/rules)
+and place an API token in `~/.kaggle/`:
+
+```bash
+pip install -e ".[ieee]"
+make ieee         # downloads, trains, writes reports/ieee/
+```
+
+The code is tested in CI on a fixture with the IEEE-CIS schema
+([`tests/test_ieee.py`](tests/test_ieee.py)).
 
 ---
 
 ## Why this project is different
-
-Most fraud portfolio projects score near-perfectly on a random split of a
-public dataset. Production fraud doesn't work like that, and this project is
-built around the parts that make it hard:
 
 | Reality | How it is handled here |
 |---|---|
 | "Unusual" is relative to the customer | Behavioural features vs the customer's own history |
 | Features must exist at authorisation time | Point-in-time: each row sees only *earlier* transactions — [tested](tests/test_features.py) |
 | Models are used on the future | Out-of-time test set + forward-chaining CV |
-| Labels arrive weeks late | 14-day label-delay embargo before the test period and inside CV |
-| Fraudsters adapt | Typology mix and tactics drift in the test period |
-| Not all fraud is reported | Label noise; unreported fraud tracked separately |
+| Labels arrive weeks late | Label-delay embargo before the test period and inside CV |
+| Fold models score on different scales | CV scored per fold, and the threshold transferred as an alert rate |
+| Model selection is noisy | Runner-ups' test scores reported as diagnostics |
 | A €900 miss ≠ a €2 miss | Missed-fraud cost = amount + chargeback fee |
-| A fraud team counts stopped *attacks* | Detection per attack, transactions and € lost before the first alert |
-| Retrained models score on a new scale | Threshold carried over as an alert rate, regret vs hindsight reported |
-| "Better than what we have?" | Benchmarked against a rule engine at equal alert volume |
+| A fraud team counts stopped *attacks* | Detection per attack, € lost before the first alert |
+| "Better than what we have?" | Rule engine benchmark at equal alert volume |
 | Analysts need a *why* | Reason codes for every alert |
 
 ---
 
-## The data: a simulated card portfolio
+## The evaluation protocol
 
-Real payment data is confidential, so [`simulation.py`](src/fraud_detection/simulation.py)
-simulates **2,500 customers over six months (~258k transactions, 0.53%
-fraud)**. Each customer has a spend level, preferred hours, devices (phones
-get replaced), online habits and sometimes a trip abroad, so legitimate
-traffic overlaps heavily with classic fraud signals. Fraud comes in four
-typologies:
+```
+transaction log ──► point-in-time behaviour features ──► out-of-time split
+                                     train (labels known) │ embargo │ test
+                                                          │ no labels│
+   forward-chaining CV ─ every fold model sees ≥ 50% of the history,
+   (embargo gap)          scored per fold and averaged ──► pick model
+                                                          │
+   cost-optimal alert rate on the 2 most recent folds ────┤
+   refit on all labelled data, place threshold at that    │
+   alert rate on the embargo window's scores ─────────────┤
+                                                          ▼
+   score test once ──► cost, regret vs hindsight, clustered CIs, attack-level
+                       detection, rule benchmark, reason codes
+```
+
+Three of these steps exist because an earlier version got them wrong. The
+[changelog](CHANGELOG.md) has the details:
+
+1. **Pooled CV scores mixed score scales.** Moving one fold boundary by 188
+   rows changed CV PR-AUC from 0.75 to 0.59. Folds are now scored
+   separately and averaged.
+2. **The first fold model trained on 7 days** and dominated the average.
+   Every fold model now sees at least half of the history.
+3. **A raw CV threshold doesn't transfer** to a model trained on more data
+   (regret €2.5k). The alert rate does (regret €62 on the simulated track).
+
+---
+
+## The simulated portfolio
+
+Real data lacks ground truth for *why* a transaction is fraud.
+[`simulation.py`](src/fraud_detection/simulation.py) simulates 2,500
+customers over six months (~258k transactions, 0.53% fraud). Each customer
+has a spend level, preferred hours, devices (phones get replaced), online
+habits and sometimes a trip abroad, so legitimate traffic overlaps heavily
+with classic fraud signals. Fraud comes in four typologies; from May the mix
+shifts toward account takeover and card testers raise their test amounts.
+Some fraud is never reported.
 
 | Typology | Footprint |
 |---|---|
@@ -76,111 +174,73 @@ typologies:
 | **Cloned card** | In-store spending far from home, often abroad |
 | **Stealth** | One purchase that looks like the customer's own |
 
-From May the mix shifts toward account takeover and card testers raise their
-test amounts to dodge small-amount rules.
-
 ![EDA Overview](reports/eda_overview.png)
 
----
+### Model selection, honestly
 
-## Approach
+| Model | CV PR-AUC (per-fold mean) | Test PR-AUC |
+|---|---|---|
+| Logistic regression | 0.586 | 0.535 (diagnostic) |
+| **Random forest** (selected) | **0.761** | **0.652** |
+| Gradient boosting | 0.753 | 0.748 (diagnostic) |
 
-```
-transaction log ──► point-in-time behaviour features ──► out-of-time split
-                    (velocity, spend vs own median,     train ≤ 16 Apr │ embargo │ test May–Jun
-                     device age, small-charge bursts)   (labels known) │ 17–30 Apr│
-                                                                       ▼
-   forward-chaining CV (with embargo gap) ──► pick model by PR-AUC ──► cost-optimal
-   (3 candidates)                                                      alert rate on
-                                                                       recent folds
-                                                                       │
-   refit on all labelled data ──► place threshold at that alert rate on│the embargo
-                                  window's scores (no labels needed)   ▼
-   score test once ──► metrics · attack-level detection · rule benchmark ·
-                       typology/month breakdown · reason codes · clustered CIs
-```
-
-**Models compared** (forward-chaining CV PR-AUC): logistic regression 0.50,
-random forest 0.75, **gradient boosting 0.75** — tree ensembles win because
-fraud lives in interactions ("new device *and* far above usual spend").
+Random forest wins CV by 0.008, a margin smaller than the fold-to-fold
+variation (per-fold PR-AUC ranges 0.63–0.88). On the future, gradient
+boosting would have been clearly better. The selection rule was not changed
+after seeing this, because that would be tuning on the test set. It is
+reported because model selection is noisy, and a reviewer should be able
+to see how noisy.
 
 ![Precision-Recall Curve](reports/pr_curve.png)
 
----
-
-## The decision a risk analyst owns: the threshold
+### The decision a risk analyst owns: the threshold
 
 A missed fraud costs its **amount plus a €20 chargeback fee**; a false alarm
-costs **€5** of analyst time and customer friction.
-
-A subtlety most projects miss: cross-validation models are trained on less,
-older history than the final model, so their scores sit on a **different
-scale**. Their cost-optimal threshold (0.025) would make the final model
-flag 2.15% of traffic instead of the intended 1.26%, 70% more alerts. What does transfer is the cost-optimal
-**alert rate** (1.26%). The deployed threshold is the score at that rate on
-the final model's predictions for the embargo window, transactions already
-seen on deployment day but not yet labelled:
+costs **€5**. CV fold models are trained on less, older history than the
+final model, so their scores sit on a different scale. What transfers is
+the cost-optimal **alert rate** (1.15%). The deployed threshold is the score
+at that rate on the final model's predictions for the embargo window:
+transactions already seen on deployment day but not yet labelled.
 
 ![Cost vs Threshold](reports/cost_curve.png)
 
 | Threshold | Test cost |
 |---|---|
-| Default 0.5 | €12,775 |
-| Raw CV threshold 0.025 | €11,396 |
-| **Deployed 0.065 (alert-rate transfer)** | **€9,548** |
-| Best possible in hindsight (0.12) | €8,932 |
+| Default 0.5 | €18,705 |
+| Raw CV threshold 0.20 | €10,453 |
+| **Deployed 0.131 (alert-rate transfer)** | **€9,726** |
+| Best possible in hindsight (0.12) | €9,664 |
 
-The remaining **regret is €616**, and the saving against 0.5 is significant
-(95% CI €1.1k–€5.8k). Change the assumptions and the pipeline re-derives
-everything:
+The saving against 0.5 is significant (95% CI €5.2k–€13.0k). Change the
+assumptions and the pipeline re-derives everything:
 
 ```bash
 fraud-detection train --chargeback-fee 40 --cost-fp 12
 ```
 
----
-
-## Better than rules?
-
-Four rules a fraud team typically starts with (high amount, new device with
-unusual spend, card-testing burst, spending far abroad) raise 2,118 alerts in
-the test period. Given **the same 2,118 alerts**, the model catches:
-
-| | Recall | Precision |
-|---|---|---|
-| Rule engine | 62% | 14% |
-| **Model** | **88%** | **19%** |
-
----
-
-## Where it works — and where it doesn't
-
-Measured per **attack** (all fraud transactions on one card in one
-episode), the question a fraud team reports on:
+### Attacks, not transactions
 
 | Typology | Attacks stopped |
 |---|---|
-| Account takeover | 98.5% |
+| Account takeover | 95.5% |
 | Card testing | 100% |
 | Cloned card | 100% |
-| Stealth | 1.9% |
+| Stealth | 0% |
 
-46% of all attacks are stopped on their **first** fraudulent transaction,
-and only 8.6% of fraud value is lost before the first alert. All 29
-card-testing attacks in the test period raised an alert during the small
-test charges, before the cash-out.
+45% of attacks are stopped on their **first** fraudulent transaction and
+9.7% of fraud value is lost before the first alert. All 29 card-testing
+attacks raised an alert during the small test charges, before the
+cash-out. At the rule engine's 2,118 alerts, the model catches **87%** of
+fraud and the rules **62%**.
 
 ![Recall by Typology](reports/recall_by_typology.png)
 
-Stealth fraud is almost never caught. It looks like the customer's own
-spending, so no transaction-level model can separate it. That is a finding
-for the business (e.g. cardholder push notifications), not something to
-tune away. Performance also dips in May, the first month after the tactics
-shift (PR-AUC 0.72 vs 0.78 in June).
+Stealth fraud is never caught: it looks like the customer's own spending.
+That is a finding for the business (e.g. cardholder push notifications),
+not something to tune away. May, the first month after the tactics shift,
+is the weakest (PR-AUC 0.61 vs 0.71 in June).
 
----
-
-## Every alert explains itself
+### Every alert explains itself
 
 Model-agnostic reason codes reset one feature group at a time to a typical
 value and report the ones that drive the score
@@ -188,12 +248,9 @@ value and report the ones that drive the score
 
 | Amount | Category | Reasons | Truth |
 |---|---|---|---|
-| €325.57 | gift cards | recently first-seen device; small test charges in the last hour; large amount | card testing |
-| €149.11 | jewelry | far from home; large amount; high spend in the last day | cloned card |
-| €278.63 | electronics | recently first-seen device; large amount; unusual amount for this customer | card testing |
-
-Global explanation via permutation importance (device age, merchant risk,
-distance and new-device flags lead):
+| €2.18 | digital goods | device first seen in the last 24h; unusual transaction amount; risky merchant category | card testing |
+| €213.41 | electronics | device first seen in the last 24h; unusual gap since the previous transaction; unusual transaction amount | account takeover |
+| €149.11 | jewelry | far from home; risky merchant category; unusual transaction amount | cloned card |
 
 ![Feature Importance](reports/feature_importance.png)
 
@@ -204,20 +261,22 @@ distance and new-device flags lead):
 ```bash
 pip install -e ".[dev]"
 
-make all        # simulate data, EDA, train, evaluate, save model + reports (~1.5 min)
-make test       # 58 tests
+make all        # simulated track: data, EDA, train, evaluate, reports (~2 min)
+make ulb        # real ULB track (~1 min, downloads from OpenML)
+make ieee       # real IEEE-CIS track (Kaggle token required)
+make test       # test suite
 ```
 
-Or step by step:
+The simulated track can also be run step by step:
 
 ```bash
 fraud-detection generate                        # data/transactions.csv
 fraud-detection eda                             # reports/eda_overview.png
-fraud-detection train                           # metrics.json, figures, models/fraud_model.joblib
+fraud-detection train                           # metrics, figures, model bundle
 fraud-detection score log.csv -o scored.csv     # fraud_probability, flag, reasons
 ```
 
-Everything is seeded; `make all` reproduces every number above.
+Everything is seeded; `make all` and `make ulb` reproduce every number above.
 
 ---
 
@@ -225,19 +284,19 @@ Everything is seeded; `make all` reproduces every number above.
 
 ```
 src/fraud_detection/
-├── simulation.py   # customer-level transaction simulator (typologies, drift, label noise)
-├── features.py     # point-in-time behaviour features + FraudFeatures transformer
+├── protocol.py     # the shared evaluation protocol (split, CV, threshold, test)
 ├── validation.py   # out-of-time split, label-delay embargo, forward-chaining CV
-├── models.py       # logistic regression, random forest, gradient boosting
-├── evaluation.py   # cost curve, threshold transfer, clustered bootstrap, attack-level metrics
-├── rules.py        # rule-engine baseline
-├── explain.py      # per-alert reason codes
-├── model.py        # training & evaluation pipeline
-├── scoring.py      # model bundle persistence, batch scoring
+├── evaluation.py   # cost curve, threshold transfer, clustered bootstrap, attack metrics
+├── explain.py      # reason codes, grouped permutation importance
+├── ulb.py          # real track: ULB card data
+├── ieee/           # real track: IEEE-CIS (data, features, models, pipeline)
+├── simulation.py   # simulated portfolio (typologies, drift, label noise)
+├── features.py     # point-in-time behaviour features + FraudFeatures
+├── models.py · model.py · rules.py · scoring.py
 ├── eda.py · plots.py · cli.py · data.py · config.py
-tests/              # 58 tests incl. look-ahead, leakage and embargo checks
-notebooks/          # step-by-step walkthrough
-reports/            # metrics.json, figures, sample alerts
+tests/              # unit + end-to-end tests, incl. look-ahead and embargo checks
+notebooks/          # step-by-step walkthrough of the simulated track
+reports/            # simulated track; reports/ulb/ and reports/ieee/ for real data
 docs/model_card.md  # intended use, evaluation, limitations
 ```
 
@@ -253,13 +312,14 @@ See the [model card](docs/model_card.md) for limitations and the
 
 Fraud typologies and behavioural feature design · point-in-time feature
 engineering · out-of-time and forward-chaining validation with a label-delay
-embargo · attack-level detection metrics · threshold transfer · imbalanced
-classification · gradient boosting · cost-sensitive decision thresholds ·
-rule-engine benchmarking · explainability (reason codes, permutation
-importance) · uncertainty quantification (customer-clustered bootstrap) ·
-calibration analysis ·
-tested, packaged, CI-checked code.
+embargo · threshold transfer across retrained models · attack-level
+detection metrics · imbalanced classification · gradient boosting ·
+cost-sensitive decisions · rule-engine benchmarking · explainability (reason
+codes, grouped permutation importance) · customer-clustered bootstrap ·
+working with real, anonymised payment data · tested, packaged, CI-checked
+code.
 
 ## License
 
-Released under the [MIT License](LICENSE).
+Code released under the [MIT License](LICENSE). The ULB and IEEE-CIS data
+remain under their own terms and are downloaded, never redistributed.
