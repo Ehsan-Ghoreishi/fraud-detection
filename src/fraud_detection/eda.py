@@ -12,16 +12,12 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import matplotlib
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 
-matplotlib.use("Agg")  # render to files; never needs a display
-
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-
-from fraud_detection.config import DATA_PATH, REPORTS  # noqa: E402
-from fraud_detection.features import NIGHT_HOURS  # noqa: E402
+from fraud_detection.config import DATA_PATH, REPORTS
+from fraud_detection.features import NIGHT_HOURS
 
 log = logging.getLogger(__name__)
 

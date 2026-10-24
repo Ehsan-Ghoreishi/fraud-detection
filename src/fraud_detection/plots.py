@@ -11,21 +11,17 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")  # render to files; never needs a display
-
-import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
-from sklearn.metrics import (  # noqa: E402
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+from sklearn.metrics import (
     average_precision_score,
     confusion_matrix,
     precision_recall_curve,
 )
 
-from fraud_detection.config import REPORTS  # noqa: E402
-from fraud_detection.evaluation import cost_curve  # noqa: E402
-from fraud_detection.model import train_and_evaluate  # noqa: E402
+from fraud_detection.config import REPORTS
+from fraud_detection.evaluation import cost_curve
+from fraud_detection.model import train_and_evaluate
 
 log = logging.getLogger(__name__)
 
