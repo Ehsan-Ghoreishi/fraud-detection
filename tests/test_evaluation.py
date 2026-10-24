@@ -91,3 +91,29 @@ def test_expensive_frauds_pull_the_threshold_down():
 def test_value_recall():
     y = np.array([1, 1, 0])
     assert value_recall(y, [1, 0, 1], [300.0, 100.0, 50.0]) == 0.75
+
+
+def test_cluster_bootstrap_is_wider_for_correlated_errors():
+    # 40 customers with 25 identical transactions each: errors are perfectly
+    # correlated within a customer, so the effective sample is 40, not 1,000
+    rng = np.random.default_rng(5)
+    groups = np.repeat(np.arange(40), 25)
+    y_cust = rng.random(40) < 0.5
+    right = rng.random(40) < 0.7          # is the model right for this customer?
+    y = np.repeat(y_cust, 25)
+    proba = np.repeat(np.where(right, y_cust, ~y_cust) * 0.8 + 0.1, 25)
+    naive = bootstrap_ci(y, proba, 0.5, cost_fn=10, n_boot=300)
+    clustered = bootstrap_ci(y, proba, 0.5, cost_fn=10, n_boot=300,
+                             groups=groups)
+    width = lambda ci: ci["recall"][1] - ci["recall"][0]   # noqa: E731
+    assert width(clustered) > 2 * width(naive)
+
+
+def test_cluster_bootstrap_keeps_groups_whole():
+    from fraud_detection.evaluation import _cluster_sampler
+
+    groups = np.array([7, 7, 3, 3, 3, 9])
+    idx = _cluster_sampler(groups, np.random.default_rng(0))()
+    counts = np.bincount(groups[idx], minlength=10)
+    # every drawn customer contributes all of its rows
+    assert all(counts[g] % (groups == g).sum() == 0 for g in (3, 7, 9))

@@ -140,8 +140,9 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
              f"(€{cost_at_default:,.0f} at 0.50, €{no_model_cost:,.0f} "
              "with no model)")
 
+    # resample whole customers: a fraud burst on one card is one event
     ci = bootstrap_ci(y_test, proba, threshold, fn_cost_test, cost_fp,
-                      seed=random_state)
+                      seed=random_state, groups=test["customer_id"])
     log.info("95%% CI  PR-AUC %s | recall %s | precision %s",
              ci["pr_auc"], ci["recall"], ci["precision"])
 

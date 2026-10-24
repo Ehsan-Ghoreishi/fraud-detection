@@ -58,26 +58,32 @@ def choose_threshold(y_true, proba, cost_fn,
 def bootstrap_ci(y_true, proba, threshold: float, cost_fn,
                  cost_fp: float = COST_FALSE_POSITIVE,
                  baseline_threshold: float = 0.5, n_boot: int = 1_000,
-                 level: float = 0.95, seed: int = 0) -> dict:
+                 level: float = 0.95, seed: int = 0, groups=None) -> dict:
     """Bootstrap confidence intervals for the headline test metrics.
 
-    Resamples the test set with replacement, stratified by class so every
-    replicate keeps the observed fraud count. ``cost_vs_baseline`` is the
-    cost at ``threshold`` minus the cost at ``baseline_threshold``:
-    negative means the tuned threshold is cheaper.
+    With ``groups`` (e.g. customer IDs) whole groups are resampled — a
+    cluster bootstrap. Fraud arrives in bursts on the same card, so its
+    transactions are not independent; resampling them one by one would
+    understate the uncertainty. Without ``groups`` transactions are
+    resampled, stratified by class.
+
+    ``cost_vs_baseline`` is the cost at ``threshold`` minus the cost at
+    ``baseline_threshold``: negative means the tuned threshold is cheaper.
     """
     y_true = np.asarray(y_true).astype(bool)
     proba = np.asarray(proba)
     fn_cost = _per_txn(cost_fn, len(y_true))
     rng = np.random.default_rng(seed)
-    pos, neg = np.flatnonzero(y_true), np.flatnonzero(~y_true)
+    draw = (_cluster_sampler(np.asarray(groups), rng) if groups is not None
+            else _stratified_sampler(y_true, rng))
 
     stats = {k: [] for k in ("pr_auc", "recall", "precision",
                              "cost_vs_baseline")}
     for _ in range(n_boot):
-        idx = np.concatenate([rng.choice(pos, pos.size),
-                              rng.choice(neg, neg.size)])
+        idx = draw()
         y, p = y_true[idx], proba[idx]
+        if not y.any():
+            continue
         flagged = p >= threshold
         tp = (flagged & y).sum()
         stats["pr_auc"].append(average_precision_score(y, p))
@@ -90,6 +96,20 @@ def bootstrap_ci(y_true, proba, threshold: float, cost_fn,
     tail = (1 - level) / 2 * 100
     return {k: [round(float(v), 4) for v in np.percentile(s, [tail, 100 - tail])]
             for k, s in stats.items()}
+
+
+def _stratified_sampler(y_true, rng):
+    pos, neg = np.flatnonzero(y_true), np.flatnonzero(~y_true)
+    return lambda: np.concatenate([rng.choice(pos, pos.size),
+                                   rng.choice(neg, neg.size)])
+
+
+def _cluster_sampler(groups, rng):
+    order = np.argsort(groups, kind="stable")
+    _, starts = np.unique(groups[order], return_index=True)
+    members = np.split(order, starts[1:])
+    return lambda: np.concatenate(
+        [members[i] for i in rng.integers(0, len(members), len(members))])
 
 
 def value_recall(y_true, flagged, amount) -> float:
