@@ -10,13 +10,14 @@ import pandas as pd
 from fraud_detection import __version__
 from fraud_detection.config import MODELS_DIR
 from fraud_detection.data import LOG_COLUMNS
+from fraud_detection.explain import describe, reason_codes
 from fraud_detection.features import RAW_COLUMNS, add_behavioural_features
 
 MODEL_PATH = MODELS_DIR / "fraud_model.joblib"
 
 
 def save_model(model, threshold: float, metadata: dict | None = None,
-               path: Path = MODEL_PATH) -> Path:
+               path: Path = MODEL_PATH, reference=None) -> Path:
     """Save the fitted pipeline together with the threshold it ships with.
 
     The threshold is part of the decision rule, so it travels with the
@@ -26,6 +27,7 @@ def save_model(model, threshold: float, metadata: dict | None = None,
     joblib.dump({
         "pipeline": model,
         "threshold": float(threshold),
+        "reference": reference,
         "package_version": __version__,
         "metadata": metadata or {},
     }, path)
@@ -40,7 +42,9 @@ def load_model(path: Path = MODEL_PATH) -> dict:
 
 
 def score(transactions: pd.DataFrame, bundle: dict) -> pd.DataFrame:
-    """Score a transaction log; adds ``fraud_probability`` and ``flag``.
+    """Score a transaction log; adds ``fraud_probability``, ``flag`` and
+    ``reasons`` (reason codes for flagged rows, when the bundle has a
+    reference).
 
     Behavioural features need each customer's history, so pass the log
     including earlier transactions — every row is scored using only the
@@ -50,8 +54,15 @@ def score(transactions: pd.DataFrame, bundle: dict) -> pd.DataFrame:
     if missing:
         raise ValueError(f"missing required columns: {missing}")
     enriched = add_behavioural_features(transactions)
-    proba = bundle["pipeline"].predict_proba(enriched[RAW_COLUMNS])[:, 1]
+    X = enriched[RAW_COLUMNS]
+    proba = bundle["pipeline"].predict_proba(X)[:, 1]
+    flag = proba >= bundle["threshold"]
+    reasons = pd.Series("", index=transactions.index)
+    if bundle.get("reference") is not None and flag.any():
+        codes = reason_codes(bundle["pipeline"], X[flag], bundle["reference"])
+        reasons[flag] = [describe(c) for c in codes]
     return transactions.assign(
         fraud_probability=proba.round(4),
-        flag=(proba >= bundle["threshold"]).astype(int),
+        flag=flag.astype(int),
+        reasons=reasons,
     )

@@ -53,6 +53,7 @@ from fraud_detection.evaluation import (
     cost_curve,
     value_recall,
 )
+from fraud_detection.explain import describe, reason_codes, reference_row
 from fraud_detection.features import FEATURES, RAW_COLUMNS, add_behavioural_features
 from fraud_detection.models import build_models
 from fraud_detection.rules import compare_with_rules
@@ -196,17 +197,42 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     for f, v in importances[:8]:
         log.info(f"  {f:>26}: {v:.4f}")
 
+    # reason codes need a "typical transaction" to compare each alert with
+    reference = reference_row(best_model.named_steps["features"]
+                              .transform(X_train))
+    alerts = sample_alerts(test, proba, best_model, reference)
+
     if reports_dir is not None:
         reports_dir.mkdir(parents=True, exist_ok=True)
         (reports_dir / "metrics.json").write_text(
             json.dumps(summary, indent=2) + "\n")
+        alerts.to_csv(reports_dir / "sample_alerts.csv", index=False)
 
     return {
         "summary": summary, "model": best_model, "threshold": threshold,
+        "reference": reference, "sample_alerts": alerts,
         "train": train.assign(oof_proba=oof[best_name]),
         "test": test.assign(proba=proba, flagged=flagged.astype(int)),
         "y_test": y_test, "proba": proba,
     }
+
+
+def sample_alerts(test: pd.DataFrame, proba, model, reference,
+                  n: int = 15) -> pd.DataFrame:
+    """The ``n`` highest-scored test transactions with their reason codes."""
+    top = test.assign(score=proba).nlargest(n, "score")
+    reasons = reason_codes(model, top[RAW_COLUMNS], reference)
+    return pd.DataFrame({
+        "transaction_id": top["transaction_id"],
+        "timestamp": top["timestamp"],
+        "customer_id": top["customer_id"],
+        "amount": top["amount"],
+        "merchant_category": top["merchant_category"],
+        "channel": top["channel"],
+        "score": top["score"].round(3),
+        "reasons": [describe(r) for r in reasons],
+        "fraud_type": top["fraud_type"],
+    })
 
 
 def breakdowns(test: pd.DataFrame, proba, flagged) -> dict:

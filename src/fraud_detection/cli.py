@@ -38,7 +38,7 @@ def _train(args) -> None:
                       metadata={"best_model": out["summary"]["best_model"],
                                 "chargeback_fee": args.chargeback_fee,
                                 "cost_false_positive": args.cost_fp},
-                      path=args.model)
+                      path=args.model, reference=out["reference"])
     log.info("Model saved to %s", path)
     if args.plots:
         from fraud_detection.plots import make_all

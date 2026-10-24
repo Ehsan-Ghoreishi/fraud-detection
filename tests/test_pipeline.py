@@ -65,10 +65,13 @@ def test_evaluation_is_out_of_time(trained):
 
 def test_save_load_and_score_roundtrip(trained, small_log, tmp_path):
     out, _ = trained
-    path = save_model(out["model"], out["threshold"], path=tmp_path / "m.joblib")
+    path = save_model(out["model"], out["threshold"], path=tmp_path / "m.joblib",
+                      reference=out["reference"])
     bundle = load_model(path)
     scored = score(small_log, bundle)
     assert len(scored) == len(small_log)
+    assert (scored.reasons[scored.flag == 1] != "").all()
+    assert (scored.reasons[scored.flag == 0] == "").all()
     assert scored.fraud_probability.between(0, 1).all()
     expected = (scored.fraud_probability >= bundle["threshold"]).astype(int)
     # probabilities are rounded for output, so allow boundary disagreements
@@ -101,8 +104,16 @@ def test_cli_end_to_end(tmp_path):
     cli(["-q", "score", str(data), "-o", str(tmp_path / "s.csv"),
          "--model", str(model)])
     assert {p.name for p in reports.iterdir()} == {
-        "metrics.json", "pr_curve.png", "confusion_matrix.png",
+        "metrics.json", "sample_alerts.csv", "pr_curve.png", "confusion_matrix.png",
         "cost_curve.png", "feature_importance.png", "calibration.png",
         "recall_by_typology.png",
     }
     assert (tmp_path / "s.csv").stat().st_size > 0
+
+
+def test_sample_alerts_explain_themselves(trained):
+    out, reports = trained
+    alerts = out["sample_alerts"]
+    assert alerts.score.is_monotonic_decreasing
+    assert (alerts.reasons.str.len() > 0).all()
+    assert (reports / "sample_alerts.csv").exists()
