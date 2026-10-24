@@ -41,6 +41,14 @@ def test_breakdowns_cover_typologies_and_months(trained):
     assert 0 <= hidden["flagged"] <= hidden["transactions"]
 
 
+def test_threshold_is_placed_on_the_embargo_window(trained):
+    out, _ = trained
+    cost = out["summary"]["business_cost"]
+    assert cost["threshold_method"] == "alert_rate_transfer"
+    assert 0 < cost["target_alert_rate"] < 1
+    assert out["threshold"] != cost["threshold_cv_scale"]
+
+
 def test_threshold_regret_is_measured(trained):
     cost = trained[0]["summary"]["business_cost"]
     # the hindsight-optimal threshold can never be beaten on its own data

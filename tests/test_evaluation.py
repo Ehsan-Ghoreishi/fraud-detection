@@ -155,3 +155,16 @@ def test_episode_metrics_measure_time_to_detect():
     assert m["value_lost_before_detection"] == round(350 / 1152, 3)
     assert m["detection_rate_by_typology"] == {"ato": 1.0, "card_testing": 1.0,
                                                "stealth": 0.0}
+
+
+def test_rate_matched_threshold_preserves_the_alert_rate():
+    import pytest
+
+    from fraud_detection.evaluation import rate_matched_threshold
+
+    rng = np.random.default_rng(3)
+    final_scores = rng.beta(1, 30, 50_000)       # a different score scale
+    t = rate_matched_threshold(final_scores, 0.02)
+    assert abs((final_scores >= t).mean() - 0.02) < 0.001
+    with pytest.raises(ValueError):
+        rate_matched_threshold(final_scores, 0.0)

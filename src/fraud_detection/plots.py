@@ -49,7 +49,8 @@ def make_all(out: dict, reports_dir: Path = REPORTS) -> None:
                    reports_dir / "confusion_matrix.png")
     plot_cost_curve(out["train"], out["test"], out["threshold"],
                     cost["chargeback_fee"], cost["cost_false_positive"],
-                    reports_dir / "cost_curve.png")
+                    reports_dir / "cost_curve.png",
+                    threshold_cv=out.get("threshold_cv"))
     plot_feature_importance(summary.get("feature_importance", []),
                             reports_dir / "feature_importance.png")
     plot_calibration(out["y_test"], out["proba"], reports_dir / "calibration.png")
@@ -108,7 +109,7 @@ def plot_confusion(y_test, proba, threshold, path: Path) -> None:
 
 
 def plot_cost_curve(train, test, threshold, chargeback_fee, cost_fp,
-                    path: Path) -> None:
+                    path: Path, threshold_cv: float | None = None) -> None:
     """Cost per 1,000 transactions on CV (where tuned) and test data.
 
     ``train`` carries ``oof_proba`` (NaN where no fold predicted it) and
@@ -125,10 +126,14 @@ def plot_cost_curve(train, test, threshold, chargeback_fee, cost_fp,
             color=ACCENT, lw=2.5, label="Train (out-of-fold) — used to tune")
     ax.plot(test_table["threshold"], test_table["cost"] / len(test) * 1000,
             color=NAVY, lw=1.5, alpha=0.7, label="Test (out of time)")
+    if threshold_cv is not None:
+        ax.axvline(threshold_cv, color=ACCENT, ls="-.", lw=1.2,
+                   label=f"CV optimum (fold-model scale) = {threshold_cv:.3f}")
     ax.axvline(threshold, color=RED, ls="--", lw=1.5,
-               label=f"Chosen = {threshold:.2f}")
+               label=f"Deployed = {threshold:.3f}")
     ax.axvline(0.5, color="gray", ls=":", lw=1.5, label="Default = 0.50")
-    ax.set_xlabel("Decision threshold")
+    ax.set_xscale("log")
+    ax.set_xlabel("Decision threshold (log scale)")
     ax.set_ylabel("Expected cost per 1,000 txns (€)")
     ax.set_title("Business Cost vs Decision Threshold")
     ax.legend(loc="upper center", fontsize=9)

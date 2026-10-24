@@ -58,6 +58,19 @@ def choose_threshold(y_true, proba, cost_fn,
     return float(best), table
 
 
+def rate_matched_threshold(reference_scores, flag_rate: float) -> float:
+    """Score threshold that flags ``flag_rate`` of ``reference_scores``.
+
+    Used to move a threshold between models whose scores live on different
+    scales: the cost-optimal *alert rate* found in cross-validation is
+    preserved, and the cut-off is re-expressed on the final model's scores.
+    """
+    scores = np.asarray(reference_scores, dtype=float)
+    if not 0 < flag_rate < 1 or scores.size == 0:
+        raise ValueError("need a flag rate in (0, 1) and reference scores")
+    return float(np.quantile(scores, 1 - flag_rate))
+
+
 def bootstrap_ci(y_true, proba, threshold: float, cost_fn,
                  cost_fp: float = COST_FALSE_POSITIVE,
                  baseline_threshold: float = 0.5, n_boot: int = 1_000,

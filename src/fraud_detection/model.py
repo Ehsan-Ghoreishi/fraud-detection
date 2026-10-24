@@ -54,6 +54,7 @@ from fraud_detection.evaluation import (
     choose_threshold,
     cost_curve,
     episode_metrics,
+    rate_matched_threshold,
     value_recall,
 )
 from fraud_detection.explain import describe, reason_codes, reference_row
@@ -92,7 +93,11 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     enriched = add_behavioural_features(raw).sort_values(
         ["timestamp", "transaction_id"], kind="stable").reset_index(drop=True)
     train, test, cut = out_of_time_split(enriched, test_start)
-    train = apply_label_delay(train, cut, label_delay_days)
+    labelled = apply_label_delay(train, cut, label_delay_days)
+    # the embargo window: transactions already seen at deployment time but
+    # still unlabelled — used (scores only) to place the threshold
+    embargo = train.loc[train.index.difference(labelled.index)]
+    train = labelled
     X_train, y_train = train[RAW_COLUMNS], train["is_fraud"]
     X_test, y_test = test[RAW_COLUMNS], test["is_fraud"]
     log.info("Train: %s txns to %s | %g-day label-delay embargo | "
@@ -130,23 +135,31 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     log.info(f"\nBest model by CV PR-AUC: {best_name}")
 
     # ---- cost-based threshold, tuned on the same out-of-fold predictions ---
-    # Early folds are trained on little history and score differently from
-    # the final model, so only the most recent folds set the threshold.
+    # Fold models are trained on less (and older) history than the final
+    # model, so their scores sit on a different scale and a raw score
+    # threshold does not transfer. The cost-optimal *alert rate* does: tune
+    # on the most recent folds, then place the cut-off at the same rate on
+    # the final model's scores for the unlabelled embargo window.
     fn_cost_train = train["amount"].to_numpy() + chargeback_fee
     recent = folds[best_name] >= cv_folds - threshold_folds
     if not y_train[recent].any():           # too little fraud: use all folds
         recent = folds[best_name] >= 0
-    threshold, _ = choose_threshold(y_train[recent], oof[best_name][recent],
-                                    cost_fn=fn_cost_train[recent], cost_fp=cost_fp)
-    seen = folds[best_name] >= 0
-    threshold_all_folds, _ = choose_threshold(
-        y_train[seen], oof[best_name][seen], cost_fn=fn_cost_train[seen],
-        cost_fp=cost_fp)
-    log.info(f"Cost-optimal threshold: {threshold:.3f} (last {threshold_folds} "
-             f"folds; all folds would give {threshold_all_folds:.3f})")
+    threshold_cv, _ = choose_threshold(y_train[recent], oof[best_name][recent],
+                                       cost_fn=fn_cost_train[recent],
+                                       cost_fp=cost_fp)
+    target_rate = float((oof[best_name][recent] >= threshold_cv).mean())
 
     # ---- refit on all training data, evaluate once on the future -----------
     best_model = candidates[best_name].fit(X_train, y_train)
+    if len(embargo) and 0 < target_rate < 1:
+        threshold = rate_matched_threshold(
+            best_model.predict_proba(embargo[RAW_COLUMNS])[:, 1], target_rate)
+        threshold_method = "alert_rate_transfer"
+    else:                                   # no embargo window to anchor on
+        threshold, threshold_method = threshold_cv, "cv_score"
+    log.info(f"Threshold {threshold:.4f} ({threshold_method}): cost-optimal "
+             f"alert rate {target_rate:.2%} from the last {threshold_folds} "
+             f"folds (CV-scale threshold {threshold_cv:.4f})")
     proba = best_model.predict_proba(X_test)[:, 1]
     flagged = proba >= threshold
     fn_cost_test = test["amount"].to_numpy() + chargeback_fee
@@ -173,8 +186,8 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     oracle_threshold, oracle_table = choose_threshold(y_test, proba,
                                                       fn_cost_test, cost_fp)
     oracle_cost = float(oracle_table["cost"].min())
-    all_folds_cost = float(cost_curve(y_test, proba, fn_cost_test, cost_fp,
-                                      thresholds=[threshold_all_folds])["cost"][0])
+    cv_scale_cost = float(cost_curve(y_test, proba, fn_cost_test, cost_fp,
+                                     thresholds=[threshold_cv])["cost"][0])
     log.info(f"Test cost €{cost_at_threshold:,.0f} at {threshold:.3f} "
              f"(€{cost_at_default:,.0f} at 0.50, €{no_model_cost:,.0f} "
              f"with no model) | regret vs hindsight-optimal {oracle_threshold:.3f}: "
@@ -212,9 +225,11 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
             "test_cost_at_default_0_5": cost_at_default,
             "test_cost_without_model": no_model_cost,
             "test_savings_vs_no_model": no_model_cost - cost_at_threshold,
+            "threshold_method": threshold_method,
             "threshold_tuned_on_folds": threshold_folds,
-            "threshold_all_folds": threshold_all_folds,
-            "test_cost_at_threshold_all_folds": all_folds_cost,
+            "target_alert_rate": round(target_rate, 5),
+            "threshold_cv_scale": threshold_cv,
+            "test_cost_at_cv_scale_threshold": cv_scale_cost,
             "test_oracle_threshold": oracle_threshold,
             "test_cost_at_oracle": oracle_cost,
             "threshold_regret": cost_at_threshold - oracle_cost,
@@ -267,6 +282,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     return {
         "summary": summary, "model": best_model, "threshold": threshold,
         "reference": reference, "sample_alerts": alerts,
+        "threshold_cv": threshold_cv,
         "train": train.assign(oof_proba=oof[best_name]),
         "test": test.assign(proba=proba, flagged=flagged.astype(int)),
         "y_test": y_test, "proba": proba,
