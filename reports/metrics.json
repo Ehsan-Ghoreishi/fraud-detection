@@ -4,7 +4,8 @@
       "cv_roc_auc": 0.9996,
       "cv_pr_auc": 0.9902,
       "test_roc_auc": 0.9998,
-      "test_pr_auc": 0.9904
+      "test_pr_auc": 0.9904,
+      "test_brier": 0.00562
     },
     "random_forest": {
       "cv_roc_auc": 0.9993,
@@ -28,6 +29,24 @@
     "test_cost_at_threshold": 1135.0,
     "test_cost_at_default_0_5": 1005.0,
     "test_savings_vs_default": -130.0
+  },
+  "confidence_intervals_95": {
+    "pr_auc": [
+      0.9831,
+      0.9964
+    ],
+    "recall": [
+      0.9569,
+      0.9922
+    ],
+    "precision": [
+      0.8032,
+      0.879
+    ],
+    "cost_vs_baseline": [
+      -325.125,
+      655.0
+    ]
   },
   "feature_importance": [
     {
