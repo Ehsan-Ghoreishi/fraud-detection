@@ -35,7 +35,7 @@ from sklearn.metrics import (
     average_precision_score, precision_recall_curve, roc_curve,
 )
 
-from fraud_detection.features import FEATURES, engineer_features
+from fraud_detection.features import FEATURES, FraudFeatures
 from fraud_detection.config import (
     COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, DATA_PATH, RANDOM_STATE, REPORTS,
 )
@@ -45,8 +45,8 @@ from fraud_detection.config import (
 # Training & evaluation
 # --------------------------------------------------------------------------- #
 def train_and_evaluate() -> dict:
-    df = engineer_features(pd.read_csv(DATA_PATH))
-    X, y = df[FEATURES], df["is_fraud"]
+    df = pd.read_csv(DATA_PATH)
+    X, y = df.drop(columns="is_fraud"), df["is_fraud"]
 
     # stratified split preserves the fraud ratio in both sets
     X_train, X_test, y_train, y_test = train_test_split(
@@ -56,15 +56,19 @@ def train_and_evaluate() -> dict:
     results = {}
     models = {
         "logistic_regression": Pipeline([
+            ("features", FraudFeatures()),
             ("scaler", StandardScaler()),
             ("clf", LogisticRegression(max_iter=1000,
                                        class_weight="balanced",
                                        random_state=RANDOM_STATE)),
         ]),
-        "random_forest": RandomForestClassifier(
-            n_estimators=300, max_depth=12, min_samples_leaf=20,
-            class_weight="balanced", n_jobs=-1, random_state=RANDOM_STATE
-        ),
+        "random_forest": Pipeline([
+            ("features", FraudFeatures()),
+            ("clf", RandomForestClassifier(
+                n_estimators=300, max_depth=12, min_samples_leaf=20,
+                class_weight="balanced", n_jobs=-1, random_state=RANDOM_STATE
+            )),
+        ]),
     }
 
     best_name, best_pr_auc = None, -1.0
@@ -122,8 +126,11 @@ def train_and_evaluate() -> dict:
     # real predictive contribution. Explainability is non-negotiable in risk:
     # a fraud team must be able to justify why a customer was flagged.
     from sklearn.inspection import permutation_importance
+    # permute the engineered features (not the raw columns) so importances
+    # line up with what the classifier actually sees
+    X_test_features = best_model.named_steps["features"].transform(X_test)
     perm = permutation_importance(
-        best_model, X_test, y_test, n_repeats=10,
+        best_model[1:], X_test_features, y_test, n_repeats=10,
         random_state=RANDOM_STATE, scoring="average_precision", n_jobs=-1,
     )
     importances = sorted(
