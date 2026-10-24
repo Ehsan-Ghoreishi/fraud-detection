@@ -36,7 +36,7 @@ from sklearn.metrics import (
 )
 
 from fraud_detection.features import FEATURES
-from fraud_detection.evaluation import choose_threshold
+from fraud_detection.evaluation import choose_threshold, cost_curve
 from fraud_detection.models import build_models
 from fraud_detection.config import (
     COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, CV_FOLDS, DATA_PATH, RANDOM_STATE,
@@ -120,6 +120,13 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     print(f"Transactions flagged:      {review_rate:.1%} of all traffic")
     print(f"False alarms per real fraud: {fp / max(tp, 1):.1f}")
 
+    # what the threshold choice is worth, measured on unseen data
+    test_costs = cost_curve(y_test, best_proba, cost_fn, cost_fp,
+                            thresholds=[threshold, 0.5])["cost"]
+    cost_at_threshold, cost_at_default = map(float, test_costs)
+    print(f"Test-set cost at {threshold:.2f}: €{cost_at_threshold:,.0f} "
+          f"(vs €{cost_at_default:,.0f} at 0.50)")
+
     # persist metrics for the README / reports
     summary = {
         "models": results,
@@ -130,6 +137,13 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
         "flagged_rate": round(review_rate, 3),
         "confusion_matrix": {"tn": int(tn), "fp": int(fp),
                              "fn": int(fn), "tp": int(tp)},
+        "business_cost": {
+            "cost_false_negative": cost_fn,
+            "cost_false_positive": cost_fp,
+            "test_cost_at_threshold": cost_at_threshold,
+            "test_cost_at_default_0_5": cost_at_default,
+            "test_savings_vs_default": cost_at_default - cost_at_threshold,
+        },
     }
 
     # feature importance via permutation — works for ANY model and measures
