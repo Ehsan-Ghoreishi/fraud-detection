@@ -5,102 +5,133 @@
 | | |
 |---|---|
 | **Task** | Binary classification: is a card transaction fraudulent? |
-| **Output** | Fraud probability and a 0/1 *review* flag at a cost-tuned threshold |
-| **Selected model** | Logistic regression (`class_weight="balanced"`) on 12 engineered features |
-| **Alternative evaluated** | Random forest (300 trees, depth 12) |
-| **Selection criterion** | 5-fold stratified out-of-fold PR-AUC on the training split |
-| **Artefact** | `models/fraud_model.joblib` — fitted pipeline + threshold + package version |
+| **Output** | Fraud score, a 0/1 *review* flag at a cost-tuned threshold, and reason codes |
+| **Selected model** | `HistGradientBoostingClassifier` (`class_weight="balanced"`) on 27 features |
+| **Alternatives evaluated** | Logistic regression, random forest |
+| **Selection criterion** | Forward-chaining (4-fold) out-of-fold PR-AUC on the training period |
+| **Artefact** | `models/fraud_model.joblib` — fitted pipeline, threshold, reason-code reference, package version |
 
 ## Intended use
 
-A portfolio demonstration of how a fraud / risk analyst builds, evaluates and
-hands over a transaction-screening model. The flag is meant to route
-transactions to **human review**, not to block customers automatically.
+A portfolio demonstration of how a fraud / risk analytics team builds,
+evaluates and hands over a transaction-screening model. The flag routes
+transactions to **human review**; it is not meant to decline customers
+automatically.
 
-**Not intended for** production decisions on real customers. The model has
-only ever seen synthetic data (see below).
+**Not intended for** decisions on real customers: the model has only seen
+simulated data.
 
 ## Data
 
-Synthetic transactions from `fraud_detection.data.generate_transactions`
-(60,000 rows, 1.7% fraud, seed 42). Fraud and legitimate rows are drawn from
-different distributions for amount, hour, recency, velocity, device,
-geography and merchant risk.
+Simulated with `fraud_detection.simulation` (seed 42): 2,500 customers,
+1 January – 30 June 2026, 257,573 transactions, 0.53% labelled fraud.
 
-**Implication:** the classes are far more separable than in real payment data
-(ROC-AUC ≈ 0.9998). The *method* transfers to real data; the *scores* do not.
-Expect substantially lower PR-AUC on genuine transactions, where fraudsters
-imitate normal behaviour.
+- Customers have individual spend levels, active hours, online affinity,
+  devices (25% replace their phone mid-period) and trips abroad (15%).
+- Four fraud typologies: card testing, account takeover, cloned card
+  (60% abroad, 40% domestic far from home) and stealth.
+- **Drift**: from day 120 account takeover rises from 25% to 40% of
+  episodes and card-test amounts rise from €0.5–3 to €1–9.
+- **Label noise**: 3–5% of fraud (20% of stealth fraud) is unreported and
+  labelled legitimate; `fraud_type` keeps the ground truth for analysis and
+  is never a model input.
+
+Simulated data is still cleaner than reality: no merchant compromise
+events, no first-party fraud, no chargeback delay, and fraud typologies
+are drawn from known distributions.
 
 ## Features
 
-Raw inputs (`RAW_COLUMNS`): amount, hour, days since last transaction,
-transactions in the last hour, new device, foreign country, distance from
-home, merchant risk.
+**Point-in-time behaviour** (`add_behavioural_features`, earlier
+transactions of the same customer only — verified by a no-look-ahead test):
+prior transaction count, seconds since last transaction, transactions and
+spend in the previous hour / day, small (< €10) charges in the previous
+hour, amount vs the customer's past median, device age, new device
+(< 24h), first purchase in a merchant category.
 
-Engineered (`FraudFeatures` transformer, fitted on training data only):
-log amount, night flag (00–05h), high-velocity flag (≥3 txns/hour), geo-risk
-flag (>100 km or foreign), and a new-device × foreign × high-amount
-interaction whose amount cut-off is the *training* median.
+**Transaction attributes** (`FraudFeatures`): log amount, amount vs the
+category median (learned on training data), hour, night flag, channel,
+foreign country, log distance from home, merchant risk score, one-hot
+merchant category.
 
 ## Evaluation protocol
 
-1. Stratified 75/25 train/test split.
-2. On the training split only: 5-fold out-of-fold predictions for each
-   candidate → pick the best PR-AUC → tune the threshold that minimises
-   `150 € × FN + 5 € × FP` on those predictions.
-3. Refit the chosen pipeline on the full training split, score the test set
-   **once** at the frozen threshold.
+1. **Out-of-time split**: train 1 Jan – 30 Apr (170,775 txns), test
+   1 May – 30 Jun (86,798 txns).
+2. On the training period only: forward-chaining CV for each candidate →
+   best out-of-fold PR-AUC → threshold minimising
+   `Σ(amount + €20) over missed fraud + €5 × false alarms`.
+3. Refit on the whole training period; score the test period **once**.
 
-## Results (test set, 15,000 transactions, 255 frauds)
+## Results (test period)
 
 | Metric | Value | 95% bootstrap CI |
 |---|---|---|
-| PR-AUC | 0.990 | 0.983 – 0.996 |
-| ROC-AUC | 0.9998 | |
-| Recall | 97.6% (249 / 255) | 95.7% – 99.2% |
-| Precision | 84.1% | 80.3% – 87.9% |
-| Flagged traffic | 2.0% | |
-| Threshold | 0.77 | |
-| Cost at threshold / at 0.5 | €1,135 / €1,005 | difference −€325 – +€655 |
-| Brier score | 0.0056 | |
+| PR-AUC | 0.733 | 0.695 – 0.771 |
+| ROC-AUC | 0.970 | |
+| Recall (transactions) | 83.2% (386 / 464) | 79.7% – 86.4% |
+| Recall (fraud value) | 92.4% | |
+| Precision | 39.5% | 37.5% – 41.8% |
+| Alerts per day | 16 | |
+| Threshold | 0.09 | |
+| Cost at threshold / at 0.5 / no model | €9.3k / €12.5k / €71.6k | saving vs 0.5: €1.3k – €5.5k |
+| Brier score | 0.0028 | |
 
-Intervals come from 1,000 class-stratified bootstrap resamples of the test
-set. The cost-difference interval spans zero: on this sample the tuned
-threshold and the default 0.5 are statistically indistinguishable, because
-the cost curve is flat between ~0.5 and ~0.8. Source of truth:
-`reports/metrics.json`.
+**By typology** (recall): card testing 88%, account takeover 90%, cloned
+card 100% (n = 46), stealth 2%.
+
+**By month** (PR-AUC): May 0.71, June 0.76 — the first month after the
+tactics shift is the weakest.
+
+**Rule-engine benchmark**: at the rule engine's 2,118 alerts, rules catch
+62% of fraud and the model 87%.
+
+**Unreported fraud**: 8 of 24 unlabelled fraud transactions are flagged —
+in production these would surface as "false positives" that are actually
+fraud.
+
+Source of truth: `reports/metrics.json`.
+
+## Explainability
+
+- **Per alert**: reason codes (`explain.py`). Each feature group is reset
+  to a typical training value and the groups that lower the score most are
+  reported in plain language. Sample: `reports/sample_alerts.csv`.
+- **Global**: permutation importance on the test period
+  (`reports/feature_importance.png`); device age, merchant risk, distance
+  and the new-device flag lead.
 
 ## Calibration
 
 ![Calibration](../reports/calibration.png)
 
-`class_weight="balanced"` makes the model over-predict: scores between 0.2
-and 0.85 correspond to observed fraud rates of only 0–10%. Ranking (PR-AUC)
-and the cost-tuned flag are unaffected, but the raw output is a **score, not
-a probability**. If calibrated probabilities are needed (e.g. for expected
-loss reporting), wrap the pipeline in `CalibratedClassifierCV` and re-tune
-the threshold.
-
-## Explainability
-
-Permutation importance (drop in PR-AUC when a feature is shuffled) is
-reported in `reports/metrics.json` and `reports/feature_importance.png`.
-Merchant risk and distance from home dominate. Logistic regression
-coefficients are also directly inspectable on the saved pipeline.
+Class weighting makes the model over-predict: mid-range scores correspond
+to observed fraud rates well below the score. Ranking, the cost-tuned flag
+and reason codes are unaffected, but the output is a **score, not a
+probability**. Wrap the pipeline in `CalibratedClassifierCV` (and re-tune
+the threshold) if calibrated probabilities are needed, e.g. for
+expected-loss reporting.
 
 ## Limitations and risks
 
-- **Synthetic data**: no concept drift, no adversarial adaptation, no
-  label delay or chargeback lag.
-- **Static cost model**: a flat €150 per missed fraud ignores transaction
-  amount; an amount-weighted cost would be more realistic.
-- **No fairness assessment**: there are no customer attributes in the data.
-  On real data, flag rates should be checked across customer segments,
-  and features such as `foreign_country` reviewed for disparate impact.
-- **Probabilities are not calibrated** (see above).
+- **Stealth fraud is not detected.** Transactions that match the
+  customer's own behaviour need other controls (cardholder notifications,
+  dispute analytics).
+- **Device dependence.** Device age is the strongest signal; device-ID
+  spoofing or shared devices would weaken the model considerably.
+- **Simulated data** (see above); absolute numbers will not transfer.
+- **Cold start.** New customers have little history, so behaviour features
+  are uninformative for their first transactions.
+- **Fairness** not assessed: there are no customer demographics in the
+  data. On real data, alert rates should be compared across customer
+  segments and features like `foreign_country` reviewed for disparate
+  impact (e.g. on migrant customers who often transact abroad).
+- **Static costs.** Fixed review cost and chargeback fee; no customer
+  lifetime-value effect of false declines.
 
 ## Maintenance
 
-Retrain and re-tune the threshold whenever cost assumptions change:
-`fraud-detection train --cost-fn <€> --cost-fp <€>`.
+Monitor monthly PR-AUC and recall by typology; retrain when they fall or
+when the typology mix changes. Re-derive the threshold whenever cost
+assumptions change:
+`fraud-detection train --chargeback-fee <€> --cost-fp <€>`.
