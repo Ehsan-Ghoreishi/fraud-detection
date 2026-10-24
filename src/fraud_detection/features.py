@@ -6,6 +6,9 @@ import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 
+# hours (inclusive) treated as "night", when legitimate activity is rare
+NIGHT_HOURS = (0, 5)
+
 FEATURES = [
     "log_amount", "hour", "is_night", "days_since_last_txn",
     "txn_count_1h", "high_velocity", "new_device", "foreign_country",
@@ -30,7 +33,7 @@ def engineer_features(df: pd.DataFrame,
         high_amount_log = float(df["log_amount"].median())
 
     # "odd hour" flag — activity between midnight and 5am is higher risk
-    df["is_night"] = df["hour"].between(0, 5).astype(int)
+    df["is_night"] = df["hour"].between(*NIGHT_HOURS).astype(int)
 
     # velocity risk — many transactions in a short window is suspicious
     df["high_velocity"] = (df["txn_count_1h"] >= 3).astype(int)
