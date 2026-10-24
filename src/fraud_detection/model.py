@@ -170,8 +170,10 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     for f, v in importances[:6]:
         print(f"  {f:>24}: {v:.4f}")
 
-    return {"summary": summary, "y_test": y_test,
-            "proba": best_proba, "threshold": threshold}
+    return {"summary": summary, "model": best_model,
+            "y_test": y_test, "proba": best_proba,
+            "y_train": y_train, "oof_proba": oof[best_name],
+            "threshold": threshold}
 
 
 if __name__ == "__main__":
