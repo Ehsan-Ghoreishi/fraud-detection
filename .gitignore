@@ -24,3 +24,6 @@ htmlcov/
 # Generated artefacts (regenerate with `make all`)
 data/
 models/
+
+# rows of licensed Kaggle data; generated locally by `make ieee`
+reports/ieee/sample_alerts.csv
