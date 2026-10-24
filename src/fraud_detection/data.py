@@ -19,7 +19,6 @@ import pandas as pd
 
 from fraud_detection.config import DATA_DIR, DATA_PATH, RANDOM_STATE
 
-
 log = logging.getLogger(__name__)
 
 def generate_transactions(n: int = 60_000, fraud_rate: float = 0.017,

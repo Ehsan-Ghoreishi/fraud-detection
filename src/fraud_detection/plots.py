@@ -18,7 +18,9 @@ matplotlib.use("Agg")  # render to files; never needs a display
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
 from sklearn.metrics import (  # noqa: E402
-    average_precision_score, confusion_matrix, precision_recall_curve,
+    average_precision_score,
+    confusion_matrix,
+    precision_recall_curve,
 )
 
 from fraud_detection.config import REPORTS  # noqa: E402

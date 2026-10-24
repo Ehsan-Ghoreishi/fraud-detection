@@ -28,21 +28,30 @@ from pathlib import Path
 
 import pandas as pd
 from sklearn.inspection import permutation_importance
-from sklearn.model_selection import (
-    StratifiedKFold, cross_val_predict, train_test_split,
-)
 from sklearn.metrics import (
-    classification_report, confusion_matrix, roc_auc_score,
     average_precision_score,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+)
+from sklearn.model_selection import (
+    StratifiedKFold,
+    cross_val_predict,
+    train_test_split,
 )
 
-from fraud_detection.features import FEATURES, RAW_COLUMNS
-from fraud_detection.evaluation import choose_threshold, cost_curve
-from fraud_detection.models import build_models
 from fraud_detection.config import (
-    COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, CV_FOLDS, DATA_PATH, RANDOM_STATE,
-    REPORTS, TEST_SIZE,
+    COST_FALSE_NEGATIVE,
+    COST_FALSE_POSITIVE,
+    CV_FOLDS,
+    DATA_PATH,
+    RANDOM_STATE,
+    REPORTS,
+    TEST_SIZE,
 )
+from fraud_detection.evaluation import choose_threshold, cost_curve
+from fraud_detection.features import FEATURES, RAW_COLUMNS
+from fraud_detection.models import build_models
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +93,8 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
         oof[name] = oof_proba
 
         roc_auc = roc_auc_score(y_train, oof_proba)
-        pr_auc = average_precision_score(y_train, oof_proba)   # key metric for imbalance
+        # PR-AUC is the key metric for imbalanced data
+        pr_auc = average_precision_score(y_train, oof_proba)
 
         results[name] = {
             "cv_roc_auc": round(roc_auc, 4),
@@ -160,7 +170,7 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
         random_state=random_state, scoring="average_precision", n_jobs=-1,
     )
     importances = sorted(
-        zip(FEATURES, perm.importances_mean),
+        zip(FEATURES, perm.importances_mean, strict=True),
         key=lambda t: t[1], reverse=True,
     )
     summary["feature_importance"] = [
