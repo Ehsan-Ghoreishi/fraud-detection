@@ -32,6 +32,7 @@ from sklearn.metrics import (
 )
 
 from fraud_detection.features import FEATURES
+from fraud_detection.evaluation import choose_threshold
 from fraud_detection.models import build_models
 from fraud_detection.config import (
     COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, DATA_PATH, RANDOM_STATE, REPORTS,
@@ -129,21 +130,6 @@ def train_and_evaluate() -> dict:
 
     return {"summary": summary, "y_test": y_test,
             "proba": best_proba, "threshold": threshold}
-
-
-def choose_threshold(y_true, proba):
-    """Pick the probability threshold that minimises expected business cost."""
-    thresholds = np.linspace(0.01, 0.99, 99)
-    rows = []
-    for t in thresholds:
-        preds = (proba >= t).astype(int)
-        fp = int(((preds == 1) & (y_true == 0)).sum())
-        fn = int(((preds == 0) & (y_true == 1)).sum())
-        cost = fp * COST_FALSE_POSITIVE + fn * COST_FALSE_NEGATIVE
-        rows.append((t, cost, fp, fn))
-    cost_table = pd.DataFrame(rows, columns=["threshold", "cost", "fp", "fn"])
-    best = cost_table.loc[cost_table["cost"].idxmin(), "threshold"]
-    return float(best), cost_table
 
 
 if __name__ == "__main__":

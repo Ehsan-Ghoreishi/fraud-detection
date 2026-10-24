@@ -14,7 +14,8 @@ from matplotlib.colors import LinearSegmentedColormap
 from sklearn.metrics import precision_recall_curve, confusion_matrix
 
 from fraud_detection.config import REPORTS
-from fraud_detection.model import train_and_evaluate, choose_threshold
+from fraud_detection.evaluation import choose_threshold
+from fraud_detection.model import train_and_evaluate
 
 NAVY = "#1F3864"
 ACCENT = "#2E86AB"
