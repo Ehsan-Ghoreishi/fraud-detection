@@ -8,13 +8,13 @@ never skips.
 """
 
 from __future__ import annotations
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-ROOT = Path(__file__).resolve().parents[2]
+from fraud_detection.config import DATA_PATH, REPORTS
+
 NAVY = "#1F3864"
 RED = "#C0392B"
 
@@ -23,7 +23,7 @@ plt.rcParams.update({"figure.dpi": 120, "font.size": 10,
 
 
 def main():
-    df = pd.read_csv(ROOT / "data" / "transactions.csv")
+    df = pd.read_csv(DATA_PATH)
     legit = df[df.is_fraud == 0]
     fraud = df[df.is_fraud == 1]
 
@@ -77,7 +77,7 @@ def main():
     ax.legend(title="")
 
     fig.tight_layout(rect=[0, 0, 1, 0.97])
-    fig.savefig(ROOT / "reports" / "eda_overview.png")
+    fig.savefig(REPORTS / "eda_overview.png")
     print("EDA figure written to reports/eda_overview.png")
 
     # quick printed summary

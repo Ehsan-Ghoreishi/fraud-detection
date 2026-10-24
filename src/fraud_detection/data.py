@@ -14,9 +14,11 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from fraud_detection.config import DATA_DIR, DATA_PATH, RANDOM_STATE
+
 
 def generate_transactions(n: int = 60_000, fraud_rate: float = 0.017,
-                          seed: int = 42) -> pd.DataFrame:
+                          seed: int = RANDOM_STATE) -> pd.DataFrame:
     """Generate a synthetic but realistic transaction dataset.
 
     Parameters
@@ -100,10 +102,8 @@ def _nighttime_distribution() -> np.ndarray:
 
 
 if __name__ == "__main__":
-    from pathlib import Path
-    root = Path(__file__).resolve().parents[2]
-    (root / "data").mkdir(exist_ok=True)
+    DATA_DIR.mkdir(exist_ok=True)
     df = generate_transactions()
-    df.to_csv(root / "data" / "transactions.csv", index=False)
+    df.to_csv(DATA_PATH, index=False)
     print(f"Generated {len(df):,} transactions "
           f"({df.is_fraud.mean():.2%} fraud) -> data/transactions.csv")

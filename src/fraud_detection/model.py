@@ -22,7 +22,6 @@ demonstrates deliberately):
 
 from __future__ import annotations
 import json
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -36,13 +35,9 @@ from sklearn.metrics import (
     average_precision_score, precision_recall_curve, roc_curve,
 )
 
-ROOT = Path(__file__).resolve().parents[2]
-DATA_PATH = ROOT / "data" / "transactions.csv"
-REPORTS = ROOT / "reports"
-
-# Business cost assumptions (euros). These are the lever a risk team tunes.
-COST_FALSE_NEGATIVE = 150.0   # average loss from letting one fraud through
-COST_FALSE_POSITIVE = 5.0     # cost of reviewing/blocking one legit txn
+from fraud_detection.config import (
+    COST_FALSE_NEGATIVE, COST_FALSE_POSITIVE, DATA_PATH, RANDOM_STATE, REPORTS,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -90,7 +85,7 @@ def train_and_evaluate() -> dict:
 
     # stratified split preserves the fraud ratio in both sets
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.25, stratify=y, random_state=42
+        X, y, test_size=0.25, stratify=y, random_state=RANDOM_STATE
     )
 
     results = {}
@@ -99,11 +94,11 @@ def train_and_evaluate() -> dict:
             ("scaler", StandardScaler()),
             ("clf", LogisticRegression(max_iter=1000,
                                        class_weight="balanced",
-                                       random_state=42)),
+                                       random_state=RANDOM_STATE)),
         ]),
         "random_forest": RandomForestClassifier(
             n_estimators=300, max_depth=12, min_samples_leaf=20,
-            class_weight="balanced", n_jobs=-1, random_state=42
+            class_weight="balanced", n_jobs=-1, random_state=RANDOM_STATE
         ),
     }
 
@@ -164,7 +159,7 @@ def train_and_evaluate() -> dict:
     from sklearn.inspection import permutation_importance
     perm = permutation_importance(
         best_model, X_test, y_test, n_repeats=10,
-        random_state=42, scoring="average_precision", n_jobs=-1,
+        random_state=RANDOM_STATE, scoring="average_precision", n_jobs=-1,
     )
     importances = sorted(
         zip(FEATURES, perm.importances_mean),
