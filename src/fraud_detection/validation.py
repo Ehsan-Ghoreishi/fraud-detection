@@ -1,0 +1,45 @@
+"""Time-aware splitting: out-of-time test set and forward-chaining CV.
+
+Fraud models are trained on the past and used on the future. A random split
+lets the model learn from transactions that happen *after* the ones it is
+evaluated on, and hides drift. Both helpers here respect time order.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pandas as pd
+from sklearn.base import clone
+from sklearn.model_selection import TimeSeriesSplit
+
+
+def out_of_time_split(df: pd.DataFrame, test_start: str | pd.Timestamp | None,
+                      train_fraction: float = 2 / 3):
+    """Split a time-sorted frame into (train, test) at ``test_start``.
+
+    Without an explicit date, the cut is placed at ``train_fraction`` of the
+    covered period, rounded down to midnight.
+    """
+    ts = pd.to_datetime(df["timestamp"])
+    if test_start is None:
+        span = ts.max() - ts.min()
+        test_start = (ts.min() + span * train_fraction).floor("D")
+    cut = pd.Timestamp(test_start)
+    train, test = df[ts < cut], df[ts >= cut]
+    if train.empty or test.empty:
+        raise ValueError(f"split at {cut.date()} leaves an empty partition")
+    return train, test, cut
+
+
+def forward_chaining_oof(model, X: pd.DataFrame, y: pd.Series,
+                         n_splits: int = 4) -> np.ndarray:
+    """Out-of-fold probabilities where each fold is trained on the past only.
+
+    Rows must be in time order. The first chunk is never predicted (there
+    is nothing earlier to train on), so its entries are NaN.
+    """
+    oof = np.full(len(X), np.nan)
+    for train_idx, val_idx in TimeSeriesSplit(n_splits=n_splits).split(X):
+        fold = clone(model).fit(X.iloc[train_idx], y.iloc[train_idx])
+        oof[val_idx] = fold.predict_proba(X.iloc[val_idx])[:, 1]
+    return oof
