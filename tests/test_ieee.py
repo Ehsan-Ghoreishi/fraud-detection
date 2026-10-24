@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -5,6 +7,7 @@ import pytest
 from fraud_detection.features import BEHAVIOUR_COLUMNS, add_behavioural_features
 from fraud_detection.ieee.data import REFERENCE_DATE, load_raw, to_log
 from fraud_detection.ieee.features import IEEEFeatures, feature_families
+from fraud_detection.ieee.pipeline import train_and_evaluate_ieee
 from ieee_fixture import make_ieee_like, split_tables
 
 
@@ -72,3 +75,23 @@ def test_feature_families_cover_every_column(raw):
     assert "V1" in families["Vesta engineered (V)"]
     assert "P_emaildomain__code" in families["email domain"]
     assert "bhv_new_device" in families["customer behaviour (ours)"]
+
+
+def test_pipeline_end_to_end_on_ieee_schema(raw, tmp_path):
+    out = train_and_evaluate_ieee(
+        data=raw, reports_dir=tmp_path, test_start=None, cv_folds=3,
+        label_delay_days=5, importance_sample=2_000,
+        models=["logistic_regression", "gradient_boosting_vesta_only",
+                "gradient_boosting"])
+    s = json.loads((tmp_path / "metrics.json").read_text())
+    assert s == out["summary"]
+    assert set(s["models"]) == {"logistic_regression", "gradient_boosting",
+                                "gradient_boosting_vesta_only"}
+    best = s["models"][s["best_model"]]
+    assert best["test_pr_auc"] > 2 * s["data"]["test_fraud_rate"]
+    assert s["business_cost"]["threshold_regret"] >= 0
+    assert s["unseen_clients"]["transactions"] > 0
+    assert {d["feature"] for d in s["feature_family_importance"]} >= {
+        "customer behaviour (ours)", "Vesta engineered (V)"}
+    assert (tmp_path / "sample_alerts.csv").exists()
+    assert out["train"].timestamp.max() < out["test"].timestamp.min()
