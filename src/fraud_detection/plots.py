@@ -119,7 +119,7 @@ def plot_cost_curve(y_train, oof_proba, y_test, proba, threshold,
     ax.set_xlabel("Decision threshold")
     ax.set_ylabel("Expected cost per 1,000 txns (€)")
     ax.set_title("Business Cost vs Decision Threshold")
-    ax.legend()
+    ax.legend(loc="upper center", fontsize=9)
     fig.tight_layout()
     fig.savefig(path)
     plt.close(fig)
