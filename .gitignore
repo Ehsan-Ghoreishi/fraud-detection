@@ -1,6 +1,26 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Jupyter
 .ipynb_checkpoints/
+
+# OS
 .DS_Store
-# regenerate locally with: python src/generate_data.py
-data/transactions.csv
+
+# Generated artefacts (regenerate with `make all`)
+data/
+models/
