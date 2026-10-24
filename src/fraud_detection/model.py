@@ -104,8 +104,9 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     span_days = (train["timestamp"].max() - train["timestamp"].min()).days or 1
     cv_gap = int(round(label_delay_days * len(train) / span_days))
     # on short histories a full embargo leaves no room for the folds; keep
-    # at least half of the first training window
-    max_gap = len(train) // (2 * (cv_folds + 1))
+    # at least 5% of the rows for the first (earliest) training window
+    n = len(train)
+    max_gap = n - cv_folds * (n // (cv_folds + 1)) - int(0.05 * n)
     if cv_gap > max_gap:
         log.warning("CV label-delay gap capped at %d rows (wanted %d): "
                     "training history is short", max_gap, cv_gap)
