@@ -9,11 +9,18 @@ never skips.
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
+from pathlib import Path
 
-from fraud_detection.config import DATA_PATH, REPORTS
+import matplotlib
+
+matplotlib.use("Agg")  # render to files; never needs a display
+
+import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+
+from fraud_detection.config import DATA_PATH, REPORTS  # noqa: E402
+from fraud_detection.features import NIGHT_HOURS  # noqa: E402
 
 NAVY = "#1F3864"
 RED = "#C0392B"
@@ -22,8 +29,8 @@ plt.rcParams.update({"figure.dpi": 120, "font.size": 10,
                      "axes.spines.top": False, "axes.spines.right": False})
 
 
-def main():
-    df = pd.read_csv(DATA_PATH)
+def plot_overview(df: pd.DataFrame, path: Path) -> None:
+    """Four-panel figure contrasting fraud with legitimate traffic."""
     legit = df[df.is_fraud == 0]
     fraud = df[df.is_fraud == 1]
 
@@ -77,19 +84,36 @@ def main():
     ax.legend(title="")
 
     fig.tight_layout(rect=[0, 0, 1, 0.97])
-    fig.savefig(REPORTS / "eda_overview.png")
-    print("EDA figure written to reports/eda_overview.png")
+    fig.savefig(path)
+    plt.close(fig)
 
-    # quick printed summary
+
+def summarise(df: pd.DataFrame) -> pd.DataFrame:
+    """Headline fraud-vs-legit statistics, one row per signal."""
+    night = df["hour"].between(*NIGHT_HOURS)
+    g = df.assign(night=night).groupby("is_fraud")
+    table = pd.DataFrame({
+        "Median amount (€)": g["amount"].median(),
+        "Night transactions": g["night"].mean(),
+        "New device": g["new_device"].mean(),
+        "Foreign country": g["foreign_country"].mean(),
+    }).T
+    table.columns = ["legit", "fraud"]
+    return table
+
+
+def main(data_path: Path = DATA_PATH, reports_dir: Path = REPORTS) -> None:
+    df = pd.read_csv(data_path)
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    plot_overview(df, reports_dir / "eda_overview.png")
+    print(f"EDA figure written to {reports_dir / 'eda_overview.png'}")
+
     print("\n--- Fraud vs Legit summary ---")
-    print(f"Median amount   | legit €{legit.amount.median():.0f} | "
-          f"fraud €{fraud.amount.median():.0f}")
-    print(f"Night txns (%)  | legit {legit.hour.between(0,5).mean():.1%} | "
-          f"fraud {fraud.hour.between(0,5).mean():.1%}")
-    print(f"New device (%)  | legit {legit.new_device.mean():.1%} | "
-          f"fraud {fraud.new_device.mean():.1%}")
-    print(f"Foreign (%)     | legit {legit.foreign_country.mean():.1%} | "
-          f"fraud {fraud.foreign_country.mean():.1%}")
+    table = summarise(df)
+    for name, row in table.iterrows():
+        fmt = "€{:.0f}" if "amount" in name else "{:.1%}"
+        print(f"{name:<20} | legit {fmt.format(row.legit):>6} | "
+              f"fraud {fmt.format(row.fraud):>6}")
 
 
 if __name__ == "__main__":
