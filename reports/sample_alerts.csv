@@ -1,16 +1,16 @@
 transaction_id,timestamp,customer_id,amount,merchant_category,channel,score,reasons,fraud_type
-239043,2026-06-18 05:00:15,1821,325.57,gift_cards,online,1.0,recently first-seen device; small test charges in the last hour; unusual amount for this customer,card_testing
+239043,2026-06-18 05:00:15,1821,325.57,gift_cards,online,1.0,recently first-seen device; small test charges in the last hour; large amount,card_testing
 239038,2026-06-18 04:10:51,1821,1.99,digital_goods,online,1.0,recently first-seen device; small test charges in the last hour; unusual amount for this merchant category,card_testing
-256213,2026-06-30 02:37:18,1192,157.43,gift_cards,online,1.0,recently first-seen device; small test charges in the last hour; large amount,card_testing
-187679,2026-05-13 01:02:06,2348,422.7,gift_cards,online,1.0,recently first-seen device; small test charges in the last hour; unusual amount for this customer,card_testing
-215365,2026-06-01 13:26:50,932,149.11,jewelry,in_store,1.0,far from home; large amount; risky merchant category,cloned_card
-211479,2026-05-29 15:38:05,1627,226.06,fuel,in_store,1.0,far from home; large amount; risky merchant category,cloned_card
-186257,2026-05-11 23:12:33,1990,269.43,travel,online,1.0,recently first-seen device; high spend in the last day; large amount,account_takeover
-199317,2026-05-21 06:28:38,1203,168.3,gift_cards,online,1.0,recently first-seen device; large amount; high spend in the last day,account_takeover
-186265,2026-05-11 23:37:42,1990,203.85,gift_cards,online,1.0,recently first-seen device; large amount; high spend in the last day,account_takeover
+215365,2026-06-01 13:26:50,932,149.11,jewelry,in_store,1.0,far from home; large amount; high spend in the last day,cloned_card
 202064,2026-05-22 23:21:25,2141,278.63,electronics,online,1.0,recently first-seen device; large amount; unusual amount for this customer,card_testing
-209016,2026-05-27 19:42:21,1150,163.92,electronics,online,1.0,recently first-seen device; large amount; high spend in the last day,card_testing
-188710,2026-05-13 17:54:05,1337,144.26,electronics,online,1.0,recently first-seen device; large amount; unusual amount for this customer,card_testing
-179428,2026-05-07 09:50:42,142,260.81,electronics,online,1.0,recently first-seen device; unusual gap since the previous transaction; unusual amount for this customer,card_testing
-199316,2026-05-21 06:28:36,1203,139.02,gift_cards,online,1.0,recently first-seen device; large amount; high spend in the last day,account_takeover
-184656,2026-05-10 21:09:10,709,1.05,digital_goods,online,1.0,recently first-seen device; unusual amount for this merchant category; small test charges in the last hour,card_testing
+211479,2026-05-29 15:38:05,1627,226.06,fuel,in_store,1.0,far from home; large amount; risky merchant category,cloned_card
+199317,2026-05-21 06:28:38,1203,168.3,gift_cards,online,1.0,recently first-seen device; large amount; high spend in the last day,account_takeover
+256213,2026-06-30 02:37:18,1192,157.43,gift_cards,online,1.0,recently first-seen device; small test charges in the last hour; high-risk merchant,card_testing
+199108,2026-05-20 21:11:42,159,2.54,digital_goods,online,1.0,recently first-seen device; small test charges in the last hour; unusual amount for this merchant category,card_testing
+230429,2026-06-12 02:27:28,1211,242.91,gift_cards,online,1.0,recently first-seen device; unusual amount for this customer; many transactions in the last day,card_testing
+187679,2026-05-13 01:02:06,2348,422.7,gift_cards,online,1.0,recently first-seen device; small test charges in the last hour; unusual amount for this customer,card_testing
+209016,2026-05-27 19:42:21,1150,163.92,electronics,online,1.0,recently first-seen device; large amount; unusual amount for this customer,card_testing
+184731,2026-05-10 22:48:32,709,151.12,gift_cards,online,1.0,recently first-seen device; large amount; foreign country,card_testing
+226249,2026-06-09 02:19:52,1279,1.98,digital_goods,online,1.0,recently first-seen device; small test charges in the last hour; unusual amount for this merchant category,card_testing
+186265,2026-05-11 23:37:42,1990,203.85,gift_cards,online,1.0,recently first-seen device; large amount; foreign country,account_takeover
+221900,2026-06-06 00:19:53,2121,2.18,digital_goods,online,1.0,recently first-seen device; unusual amount for this merchant category; large amount,card_testing
