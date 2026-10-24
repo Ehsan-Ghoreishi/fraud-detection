@@ -1,16 +1,16 @@
 transaction_id,timestamp,customer_id,amount,merchant_category,channel,score,reasons,fraud_type
-244496,2026-06-21 18:44:01,541,235.48,gift_cards,online,0.999,recently first-seen device; device first seen in the last 24h; unusual gap since the previous transaction,card_testing
-219874,2026-06-04 16:11:52,292,271.55,gift_cards,online,0.999,recently first-seen device; device first seen in the last 24h; large amount,card_testing
-221900,2026-06-06 00:19:53,2121,2.18,digital_goods,online,0.999,recently first-seen device; device first seen in the last 24h; large amount,card_testing
-188710,2026-05-13 17:54:05,1337,144.26,electronics,online,0.999,recently first-seen device; device first seen in the last 24h; large amount,card_testing
-209016,2026-05-27 19:42:21,1150,163.92,electronics,online,0.999,recently first-seen device; device first seen in the last 24h; risky merchant category,card_testing
-255885,2026-06-29 19:06:55,1741,1.38,digital_goods,online,0.999,recently first-seen device; device first seen in the last 24h; large amount,card_testing
-226260,2026-06-09 03:46:30,1279,122.08,gift_cards,online,0.999,recently first-seen device; device first seen in the last 24h; risky merchant category,card_testing
-205137,2026-05-25 09:26:30,52,213.41,electronics,online,0.999,recently first-seen device; device first seen in the last 24h; unusual gap since the previous transaction,account_takeover
-207836,2026-05-27 01:15:36,1745,129.4,gift_cards,online,0.999,recently first-seen device; device first seen in the last 24h; risky merchant category,account_takeover
-256088,2026-06-29 21:41:19,1741,295.16,gift_cards,online,0.999,recently first-seen device; device first seen in the last 24h; unusual gap since the previous transaction,card_testing
-187601,2026-05-12 22:44:49,900,177.92,gift_cards,online,0.999,recently first-seen device; device first seen in the last 24h; large amount,card_testing
-221937,2026-06-06 02:15:08,2121,188.32,electronics,online,0.999,recently first-seen device; device first seen in the last 24h; large amount,card_testing
-237511,2026-06-16 21:28:56,1216,130.44,electronics,online,0.999,recently first-seen device; device first seen in the last 24h; large amount,account_takeover
-226249,2026-06-09 02:19:52,1279,1.98,digital_goods,online,0.999,recently first-seen device; device first seen in the last 24h; large amount,card_testing
-230429,2026-06-12 02:27:28,1211,242.91,gift_cards,online,0.999,recently first-seen device; device first seen in the last 24h; large amount,card_testing
+244496,2026-06-21 18:44:01,541,235.48,gift_cards,online,0.999,device first seen in the last 24h; unusual gap since the previous transaction; unusual transaction amount,card_testing
+219874,2026-06-04 16:11:52,292,271.55,gift_cards,online,0.999,device first seen in the last 24h; unusual transaction amount; unusual gap since the previous transaction,card_testing
+221900,2026-06-06 00:19:53,2121,2.18,digital_goods,online,0.999,device first seen in the last 24h; unusual transaction amount; risky merchant category,card_testing
+188710,2026-05-13 17:54:05,1337,144.26,electronics,online,0.999,device first seen in the last 24h; unusual transaction amount; unusual gap since the previous transaction,card_testing
+209016,2026-05-27 19:42:21,1150,163.92,electronics,online,0.999,device first seen in the last 24h; risky merchant category; unusual transaction amount,card_testing
+255885,2026-06-29 19:06:55,1741,1.38,digital_goods,online,0.999,device first seen in the last 24h; unusual transaction amount; risky merchant category,card_testing
+226260,2026-06-09 03:46:30,1279,122.08,gift_cards,online,0.999,device first seen in the last 24h; risky merchant category; unusual transaction amount,card_testing
+205137,2026-05-25 09:26:30,52,213.41,electronics,online,0.999,device first seen in the last 24h; unusual gap since the previous transaction; unusual transaction amount,account_takeover
+207836,2026-05-27 01:15:36,1745,129.4,gift_cards,online,0.999,device first seen in the last 24h; risky merchant category; unusual transaction amount,account_takeover
+256088,2026-06-29 21:41:19,1741,295.16,gift_cards,online,0.999,device first seen in the last 24h; unusual gap since the previous transaction; unusual transaction amount,card_testing
+187601,2026-05-12 22:44:49,900,177.92,gift_cards,online,0.999,device first seen in the last 24h; unusual transaction amount; unusual gap since the previous transaction,card_testing
+221937,2026-06-06 02:15:08,2121,188.32,electronics,online,0.999,device first seen in the last 24h; unusual transaction amount; risky merchant category,card_testing
+237511,2026-06-16 21:28:56,1216,130.44,electronics,online,0.999,device first seen in the last 24h; unusual transaction amount; unusual gap since the previous transaction,account_takeover
+226249,2026-06-09 02:19:52,1279,1.98,digital_goods,online,0.999,device first seen in the last 24h; unusual transaction amount; risky merchant category,card_testing
+230429,2026-06-12 02:27:28,1211,242.91,gift_cards,online,0.999,device first seen in the last 24h; unusual transaction amount; unusual gap since the previous transaction,card_testing

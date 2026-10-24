@@ -15,11 +15,16 @@ import pandas as pd
 from fraud_detection.features import FEATURES
 
 # feature group -> columns; one-hot categories move together
-GROUPS = {f: [f] for f in FEATURES if not f.startswith("cat_")}
-GROUPS["merchant_category"] = [f for f in FEATURES if f.startswith("cat_")]
+# one-hot categories move together, and so do features that describe the
+# same signal (device age and the new-device flag), so a reason is never
+# reported twice under two names
+_TOGETHER = {"merchant_category": [f for f in FEATURES if f.startswith("cat_")],
+             "new_device": ["new_device", "log_device_age_days"]}
+GROUPS = {f: [f] for f in FEATURES
+          if not any(f in cols for cols in _TOGETHER.values())} | _TOGETHER
 
 DESCRIPTIONS = {
-    "log_amount": "large amount",
+    "log_amount": "unusual transaction amount",
     "log_amount_vs_customer": "unusual amount for this customer",
     "log_amount_vs_category": "unusual amount for this merchant category",
     "hour": "unusual time of day",
@@ -34,7 +39,6 @@ DESCRIPTIONS = {
     "small_txn_count_1h": "small test charges in the last hour",
     "log_secs_since_last_txn": "unusual gap since the previous transaction",
     "log_prior_txn_count": "little customer history",
-    "log_device_age_days": "recently first-seen device",
     "new_device": "device first seen in the last 24h",
     "new_category": "first purchase in this merchant category",
     "merchant_category": "risky merchant category",
