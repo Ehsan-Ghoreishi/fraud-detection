@@ -56,38 +56,57 @@ merchant category.
 
 ## Evaluation protocol
 
-1. **Out-of-time split**: train 1 Jan – 30 Apr (170,775 txns), test
-   1 May – 30 Jun (86,798 txns).
-2. On the training period only: forward-chaining CV for each candidate →
-   best out-of-fold PR-AUC → threshold minimising
-   `Σ(amount + €20) over missed fraud + €5 × false alarms`.
-3. Refit on the whole training period; score the test period **once**.
+1. **Out-of-time split** at 1 May: test 1 May – 30 Jun (86,798 txns).
+2. **Label-delay embargo**: labels arrive with a delay, so a model deployed
+   on 1 May can only learn from transactions up to 16 April (150,895 txns).
+   17–30 April remains available as unlabelled history and as the
+   threshold anchor (step 5).
+3. Forward-chaining CV (4 folds) on the labelled period, with the same
+   14-day embargo as a gap between every training and validation window →
+   candidate with the best out-of-fold PR-AUC.
+4. On the two most recent folds, find the threshold minimising
+   `Σ(amount + €20) over missed fraud + €5 × false alarms` and record its
+   **alert rate** (1.26%).
+5. Refit on all labelled data. Fold models score on a different scale
+   (less history), so the deployed threshold is the score at that alert
+   rate on the final model's predictions for the embargo window
+   (0.065, vs 0.025 on the fold-model scale).
+6. Score the test period **once**. Intervals: 1,000 bootstrap resamples
+   of *customers* (fraud transactions on one card are not independent).
 
 ## Results (test period)
 
-| Metric | Value | 95% bootstrap CI |
+| Metric | Value | 95% clustered CI |
 |---|---|---|
-| PR-AUC | 0.733 | 0.695 – 0.771 |
-| ROC-AUC | 0.970 | |
-| Recall (transactions) | 83.2% (386 / 464) | 79.7% – 86.4% |
-| Recall (fraud value) | 92.4% | |
-| Precision | 39.5% | 37.5% – 41.8% |
-| Alerts per day | 16 | |
-| Threshold | 0.09 | |
-| Cost at threshold / at 0.5 / no model | €9.3k / €12.5k / €71.6k | saving vs 0.5: €1.3k – €5.5k |
-| Brier score | 0.0028 | |
+| PR-AUC | 0.748 | 0.690 – 0.792 |
+| ROC-AUC | 0.966 | |
+| Recall (transactions) | 83.2% (386 / 464) | 78.7% – 86.6% |
+| Recall (fraud value) | 92.8% | |
+| Precision | 35.4% | 29.6% – 40.2% |
+| Alerts per day | 18 | |
+| Threshold | 0.065 | |
+| Cost at threshold / at 0.5 / no model | €9.5k / €12.8k / €71.6k | saving vs 0.5: €1.1k – €5.8k |
+| Threshold regret vs hindsight optimum (0.12) | €616 | |
+| Brier score | 0.0026 | |
 
-**By typology** (recall): card testing 88%, account takeover 90%, cloned
-card 100% (n = 46), stealth 2%.
+**Per attack** (158 fraud episodes in the test period): 65.8% detected;
+account takeover 98.5%, card testing 100%, cloned card 100%, stealth 1.9%.
+46% are stopped on the first fraudulent transaction, the median detected
+attack has zero fraud transactions before the first alert, and 8.6% of
+fraud value is lost before detection. All 29 card-testing attacks alert
+before the cash-out.
 
-**By month** (PR-AUC): May 0.71, June 0.76 — the first month after the
+**By typology** (transaction recall): card testing 88%, account takeover
+90%, cloned card 100% (n = 46), stealth 2%.
+
+**By month** (PR-AUC): May 0.72, June 0.78. The first month after the
 tactics shift is the weakest.
 
 **Rule-engine benchmark**: at the rule engine's 2,118 alerts, rules catch
-62% of fraud and the model 87%.
+62% of fraud and the model 88%.
 
-**Unreported fraud**: 8 of 24 unlabelled fraud transactions are flagged —
-in production these would surface as "false positives" that are actually
+**Unreported fraud**: 8 of 24 unlabelled fraud transactions are flagged.
+In production these would surface as "false positives" that are actually
 fraud.
 
 Source of truth: `reports/metrics.json`.
@@ -128,6 +147,10 @@ expected-loss reporting.
   impact (e.g. on migrant customers who often transact abroad).
 - **Static costs.** Fixed review cost and chargeback fee; no customer
   lifetime-value effect of false declines.
+- **Threshold anchoring assumes a stable fraud rate** between the embargo
+  window and deployment. A sudden attack wave changes the score
+  distribution, and with it the alert rate the threshold was set for.
+  Monitor alert volume daily.
 
 ## Maintenance
 
