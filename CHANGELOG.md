@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-10-24
+
+First full run on the IEEE-CIS data.
+
+### Added
+- **IEEE-CIS results** (`reports/ieee/`): out-of-time test on April–May
+  2018, PR-AUC 0.515 (95% CI 0.488–0.542), ROC-AUC 0.892. Clients unseen
+  before the test period score PR-AUC 0.559. 90.5% of 2,613 compromised
+  accounts are detected.
+- **Alert-budget table** for every track (`alert_budget_table`): recall,
+  precision and value caught when only the top 0.5% / 1% / 2% / 5% of
+  scores are reviewed.
+
+### Findings
+- The point-in-time behaviour features add +0.001 CV PR-AUC on IEEE-CIS,
+  because Vesta's C/D columns already encode them.
+- The cost-optimal threshold flags 26% of IEEE-CIS traffic, so the
+  alert-budget view is the operational one.
+
+### Changed
+- IEEE-CIS sample alerts are no longer committed, because they hold rows of
+  licensed data.
+
 ## [1.2.0] — 2026-10-24
 
 Real data. The evaluation protocol now runs on two real datasets next to
