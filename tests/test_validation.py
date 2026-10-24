@@ -108,4 +108,16 @@ def test_protocol_measures_time_in_fractional_days():
                                                   freq="h")})   # 36 hours
     assert _span_days(df) == 1.5
     # a quarter-day embargo is a sixth of a 1.5-day history
-    assert cv_gap_rows(pd.concat([df] * 100), 0.25, cv_folds=2) == 617
+    assert cv_gap_rows(pd.concat([df] * 100), 0.25, cv_folds=2) == 617   # < cap
+
+
+def test_forward_chaining_minimum_training_window():
+    df = _frame(100)
+    oof, folds = forward_chaining_oof(_RecordsTrainingRange(), df[["x"]],
+                                      df["y"], n_splits=4, return_folds=True,
+                                      min_train_fraction=0.5)
+    first_val = np.flatnonzero(folds == 0)[0]
+    assert first_val >= 50                     # trained on >= half the rows
+    assert set(folds[folds >= 0]) == {0, 1, 2, 3}
+    # the first fold model saw rows 0..first_val-1 only
+    assert oof[first_val] * 1000 == first_val - 1

@@ -24,6 +24,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 
+from fraud_detection.config import CV_MIN_TRAIN_FRACTION
 from fraud_detection.evaluation import (
     bootstrap_ci,
     choose_threshold,
@@ -67,10 +68,10 @@ def cv_gap_rows(train: pd.DataFrame, label_delay_days: float,
                 cv_folds: int) -> int:
     """The label-delay embargo expressed in rows, for forward-chaining CV."""
     gap = int(round(label_delay_days * len(train) / _span_days(train)))
-    # on short histories a full embargo leaves no room for the folds; keep
-    # at least 5% of the rows for the first (earliest) training window
+    # on short histories a full embargo leaves no room for the folds: keep
+    # the minimum training window and at least 5% of the rows per fold
     n = len(train)
-    max_gap = n - cv_folds * (n // (cv_folds + 1)) - int(0.05 * n)
+    max_gap = n - int(CV_MIN_TRAIN_FRACTION * n) - cv_folds * int(0.05 * n)
     if gap > max_gap:
         log.warning("CV label-delay gap capped at %d rows (wanted %d): "
                     "training history is short", max_gap, gap)
@@ -89,7 +90,8 @@ def select_model(candidates: dict, X_train, y_train, cv_folds: int,
     y = np.asarray(y_train)
     for name, model in candidates.items():
         oof[name], folds[name] = forward_chaining_oof(
-            model, X_train, y_train, cv_folds, gap=gap, return_folds=True)
+            model, X_train, y_train, cv_folds, gap=gap, return_folds=True,
+            min_train_fraction=CV_MIN_TRAIN_FRACTION)
         # Scored per fold and averaged: each fold model scores on its own
         # scale, so pooling their predictions into one ranking would mix
         # scales and make the metric depend on fold boundaries.

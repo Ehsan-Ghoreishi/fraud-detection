@@ -51,7 +51,8 @@ def apply_label_delay(train: pd.DataFrame, cut: pd.Timestamp,
 
 def forward_chaining_oof(model, X: pd.DataFrame, y: pd.Series,
                          n_splits: int = 4, gap: int = 0,
-                         return_folds: bool = False):
+                         return_folds: bool = False,
+                         min_train_fraction: float | None = None):
     """Out-of-fold probabilities where each fold is trained on the past only.
 
     Rows must be in time order. ``gap`` rows between each training window
@@ -60,12 +61,22 @@ def forward_chaining_oof(model, X: pd.DataFrame, y: pd.Series,
     on), so its entries are NaN — as are folds whose training window
     contains no fraud yet.
 
+    With ``min_train_fraction`` the validation folds are sized so that even
+    the first fold model trains on at least that share of the rows; a model
+    fitted on a few days of history says little about a deployable one.
+
     With ``return_folds`` also returns, per row, the index of the fold that
     predicted it (0 = earliest, -1 = not predicted).
     """
     oof = np.full(len(X), np.nan)
     folds = np.full(len(X), -1)
-    splits = TimeSeriesSplit(n_splits=n_splits, gap=gap).split(X)
+    test_size = None
+    if min_train_fraction is not None:
+        test_size = (len(X) - gap - int(min_train_fraction * len(X))) // n_splits
+        if test_size < 1:
+            raise ValueError("history too short for the requested folds")
+    splits = TimeSeriesSplit(n_splits=n_splits, gap=gap,
+                             test_size=test_size).split(X)
     for k, (train_idx, val_idx) in enumerate(splits):
         if y.iloc[train_idx].nunique() < 2:
             continue

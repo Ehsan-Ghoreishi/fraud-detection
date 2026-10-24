@@ -14,6 +14,8 @@ RANDOM_STATE = 42
 # out-of-time evaluation: train on Jan-Apr, test on May-Jun
 TEST_START = "2026-05-01"
 CV_FOLDS = 4
+# every CV fold model trains on at least this share of the training history
+CV_MIN_TRAIN_FRACTION = 0.5
 # fraud labels (chargebacks, customer reports) arrive with a delay: at
 # deployment the most recent weeks cannot be used for training yet
 LABEL_DELAY_DAYS = 14
