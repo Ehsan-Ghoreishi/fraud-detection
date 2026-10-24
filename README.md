@@ -16,21 +16,25 @@ benchmark against a rule engine, and a reason code on every alert.
 
 ## Results at a glance
 
-Trained on January–April, evaluated on **May–June** — two months the model
-never saw, after fraudsters changed tactics:
+Trained on labelled history up to 16 April, deployed on 1 May, evaluated on
+**May–June** — two months the model never saw, after fraudsters changed
+tactics:
 
 | | Value | 95% CI |
 |---|---|---|
-| **Fraud transactions caught** (recall) | **83%** | 80–86% |
-| **Fraudulent value caught** | **92%** | |
-| Precision of alerts | 40% | 38–42% |
-| PR-AUC (fraud rate 0.5%) | 0.73 | 0.70–0.77 |
-| Analyst workload | 16 alerts/day | |
-| **Loss + review cost** | **€9.3k** vs €71.6k with no model | |
-| **vs rule engine, same workload** | **87% vs 62% recall** | |
+| **Attacks stopped** (account takeover / card testing / cloned card) | **99% / 100% / 100%** | |
+| **Fraudulent value caught** | **93%** | |
+| Fraud value lost before the first alert | 8.6% | |
+| Fraud transactions caught (recall) | 83% | 79–87% |
+| Precision of alerts | 35% | 30–40% |
+| PR-AUC (fraud rate 0.5%) | 0.75 | 0.69–0.79 |
+| Analyst workload | 18 alerts/day | |
+| **Loss + review cost** | **€9.5k** vs €71.6k with no model | |
+| **vs rule engine, same workload** | **88% vs 62% recall** | |
 
-Confidence intervals come from 1,000 stratified bootstrap resamples of the
-test period.
+Confidence intervals come from 1,000 bootstrap resamples **of customers**:
+fraud arrives in bursts on the same card, so resampling single transactions
+would make the intervals look tighter than they are.
 
 ---
 
@@ -45,9 +49,12 @@ built around the parts that make it hard:
 | "Unusual" is relative to the customer | Behavioural features vs the customer's own history |
 | Features must exist at authorisation time | Point-in-time: each row sees only *earlier* transactions — [tested](tests/test_features.py) |
 | Models are used on the future | Out-of-time test set + forward-chaining CV |
+| Labels arrive weeks late | 14-day label-delay embargo before the test period and inside CV |
 | Fraudsters adapt | Typology mix and tactics drift in the test period |
 | Not all fraud is reported | Label noise; unreported fraud tracked separately |
 | A €900 miss ≠ a €2 miss | Missed-fraud cost = amount + chargeback fee |
+| A fraud team counts stopped *attacks* | Detection per attack, transactions and € lost before the first alert |
+| Retrained models score on a new scale | Threshold carried over as an alert rate, regret vs hindsight reported |
 | "Better than what we have?" | Benchmarked against a rule engine at equal alert volume |
 | Analysts need a *why* | Reason codes for every alert |
 
@@ -80,19 +87,21 @@ test amounts to dodge small-amount rules.
 
 ```
 transaction log ──► point-in-time behaviour features ──► out-of-time split
-                    (velocity, spend vs own median,       train Jan–Apr │ test May–Jun
-                     device age, small-charge bursts)                   │
-                                                                        ▼
-         forward-chaining CV ──► pick model by PR-AUC ──► tune threshold on
-         (3 candidates)                                    out-of-fold cost
-                                                                        │
-                                                                        ▼
-           score test once ──► metrics · rule benchmark · typology/month breakdown
-                                · reason codes · bootstrap CIs
+                    (velocity, spend vs own median,     train ≤ 16 Apr │ embargo │ test May–Jun
+                     device age, small-charge bursts)   (labels known) │ 17–30 Apr│
+                                                                       ▼
+   forward-chaining CV (with embargo gap) ──► pick model by PR-AUC ──► cost-optimal
+   (3 candidates)                                                      alert rate on
+                                                                       recent folds
+                                                                       │
+   refit on all labelled data ──► place threshold at that alert rate on│the embargo
+                                  window's scores (no labels needed)   ▼
+   score test once ──► metrics · attack-level detection · rule benchmark ·
+                       typology/month breakdown · reason codes · clustered CIs
 ```
 
-**Models compared** (forward-chaining CV PR-AUC): logistic regression 0.49,
-random forest 0.72, **gradient boosting 0.75** — tree ensembles win because
+**Models compared** (forward-chaining CV PR-AUC): logistic regression 0.50,
+random forest 0.75, **gradient boosting 0.75** — tree ensembles win because
 fraud lives in interactions ("new device *and* far above usual spend").
 
 ![Precision-Recall Curve](reports/pr_curve.png)
@@ -102,15 +111,28 @@ fraud lives in interactions ("new device *and* far above usual spend").
 ## The decision a risk analyst owns: the threshold
 
 A missed fraud costs its **amount plus a €20 chargeback fee**; a false alarm
-costs **€5** of analyst time and customer friction. The threshold that
-minimises that cost is found on out-of-fold training predictions and then
-frozen:
+costs **€5** of analyst time and customer friction.
+
+A subtlety most projects miss: cross-validation models are trained on less,
+older history than the final model, so their scores sit on a **different
+scale**. Their cost-optimal threshold (0.025) would make the final model
+flag 2.15% of traffic instead of the intended 1.26%, 70% more alerts. What does transfer is the cost-optimal
+**alert rate** (1.26%). The deployed threshold is the score at that rate on
+the final model's predictions for the embargo window, transactions already
+seen on deployment day but not yet labelled:
 
 ![Cost vs Threshold](reports/cost_curve.png)
 
-The cost-optimal threshold is **0.09**, far below the default 0.5. On the
-test period it saves **€3.2k** compared with 0.5 (95% CI €1.3k–€5.5k, so
-not noise). Change the assumptions and the pipeline re-derives it:
+| Threshold | Test cost |
+|---|---|
+| Default 0.5 | €12,775 |
+| Raw CV threshold 0.025 | €11,396 |
+| **Deployed 0.065 (alert-rate transfer)** | **€9,548** |
+| Best possible in hindsight (0.12) | €8,932 |
+
+The remaining **regret is €616**, and the saving against 0.5 is significant
+(95% CI €1.1k–€5.8k). Change the assumptions and the pipeline re-derives
+everything:
 
 ```bash
 fraud-detection train --chargeback-fee 40 --cost-fp 12
@@ -127,11 +149,26 @@ the test period. Given **the same 2,118 alerts**, the model catches:
 | | Recall | Precision |
 |---|---|---|
 | Rule engine | 62% | 14% |
-| **Model** | **87%** | **19%** |
+| **Model** | **88%** | **19%** |
 
 ---
 
 ## Where it works — and where it doesn't
+
+Measured per **attack** (all fraud transactions on one card in one
+episode), the question a fraud team reports on:
+
+| Typology | Attacks stopped |
+|---|---|
+| Account takeover | 98.5% |
+| Card testing | 100% |
+| Cloned card | 100% |
+| Stealth | 1.9% |
+
+46% of all attacks are stopped on their **first** fraudulent transaction,
+and only 8.6% of fraud value is lost before the first alert. All 29
+card-testing attacks in the test period raised an alert during the small
+test charges, before the cash-out.
 
 ![Recall by Typology](reports/recall_by_typology.png)
 
@@ -139,7 +176,7 @@ Stealth fraud is almost never caught. It looks like the customer's own
 spending, so no transaction-level model can separate it. That is a finding
 for the business (e.g. cardholder push notifications), not something to
 tune away. Performance also dips in May, the first month after the tactics
-shift (PR-AUC 0.71 vs 0.76 in June).
+shift (PR-AUC 0.72 vs 0.78 in June).
 
 ---
 
@@ -151,9 +188,9 @@ value and report the ones that drive the score
 
 | Amount | Category | Reasons | Truth |
 |---|---|---|---|
-| €325.57 | gift cards | recently first-seen device; small test charges in the last hour; unusual amount for this customer | card testing |
-| €149.11 | jewelry | far from home; large amount; risky merchant category | cloned card |
-| €269.43 | travel | recently first-seen device; high spend in the last day; large amount | account takeover |
+| €325.57 | gift cards | recently first-seen device; small test charges in the last hour; large amount | card testing |
+| €149.11 | jewelry | far from home; large amount; high spend in the last day | cloned card |
+| €278.63 | electronics | recently first-seen device; large amount; unusual amount for this customer | card testing |
 
 Global explanation via permutation importance (device age, merchant risk,
 distance and new-device flags lead):
@@ -168,7 +205,7 @@ distance and new-device flags lead):
 pip install -e ".[dev]"
 
 make all        # simulate data, EDA, train, evaluate, save model + reports (~1.5 min)
-make test       # 45 tests
+make test       # 58 tests
 ```
 
 Or step by step:
@@ -190,15 +227,15 @@ Everything is seeded; `make all` reproduces every number above.
 src/fraud_detection/
 ├── simulation.py   # customer-level transaction simulator (typologies, drift, label noise)
 ├── features.py     # point-in-time behaviour features + FraudFeatures transformer
-├── validation.py   # out-of-time split, forward-chaining CV
+├── validation.py   # out-of-time split, label-delay embargo, forward-chaining CV
 ├── models.py       # logistic regression, random forest, gradient boosting
-├── evaluation.py   # cost curve, threshold, bootstrap CIs, value recall
+├── evaluation.py   # cost curve, threshold transfer, clustered bootstrap, attack-level metrics
 ├── rules.py        # rule-engine baseline
 ├── explain.py      # per-alert reason codes
 ├── model.py        # training & evaluation pipeline
 ├── scoring.py      # model bundle persistence, batch scoring
 ├── eda.py · plots.py · cli.py · data.py · config.py
-tests/              # 45 tests incl. look-ahead and leakage checks
+tests/              # 58 tests incl. look-ahead, leakage and embargo checks
 notebooks/          # step-by-step walkthrough
 reports/            # metrics.json, figures, sample alerts
 docs/model_card.md  # intended use, evaluation, limitations
@@ -215,10 +252,12 @@ See the [model card](docs/model_card.md) for limitations and the
 ## Skills demonstrated
 
 Fraud typologies and behavioural feature design · point-in-time feature
-engineering · out-of-time and forward-chaining validation · imbalanced
+engineering · out-of-time and forward-chaining validation with a label-delay
+embargo · attack-level detection metrics · threshold transfer · imbalanced
 classification · gradient boosting · cost-sensitive decision thresholds ·
 rule-engine benchmarking · explainability (reason codes, permutation
-importance) · uncertainty quantification (bootstrap) · calibration analysis ·
+importance) · uncertainty quantification (customer-clustered bootstrap) ·
+calibration analysis ·
 tested, packaged, CI-checked code.
 
 ## License
