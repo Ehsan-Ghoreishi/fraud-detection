@@ -117,3 +117,31 @@ def test_cluster_bootstrap_keeps_groups_whole():
     counts = np.bincount(groups[idx], minlength=10)
     # every drawn customer contributes all of its rows
     assert all(counts[g] % (groups == g).sum() == 0 for g in (3, 7, 9))
+
+
+def test_episode_metrics_measure_time_to_detect():
+    import pandas as pd
+
+    from fraud_detection.evaluation import episode_metrics
+
+    df = pd.DataFrame({
+        "fraud_episode": [-1, 1, 1, 1, 2, 2, 3],
+        "fraud_type": ["none", "ato", "ato", "ato", "card_testing",
+                       "card_testing", "stealth"],
+        "timestamp": pd.to_datetime(["2026-01-01"] * 7)
+        + pd.to_timedelta([0, 1, 2, 3, 1, 2, 1], unit="h"),
+        "amount": [10.0, 100.0, 200.0, 300.0, 2.0, 500.0, 50.0],
+    })
+    #   episode 1: first two slip through, third caught
+    #   episode 2: caught on the first (test) charge
+    #   episode 3: never caught
+    flagged = [True, False, False, True, True, False, False]
+    m = episode_metrics(df, flagged)
+    assert m["episodes"] == 3
+    assert m["detection_rate"] == round(2 / 3, 3)
+    assert m["detected_on_first_txn"] == round(1 / 3, 3)
+    assert m["median_txns_before_alert"] == 1.0      # median of [2, 0]
+    # lost before detection: 100 + 200 (ep 1) + 50 (ep 3) of 1,152
+    assert m["value_lost_before_detection"] == round(350 / 1152, 3)
+    assert m["detection_rate_by_typology"] == {"ato": 1.0, "card_testing": 1.0,
+                                               "stealth": 0.0}

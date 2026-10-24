@@ -119,3 +119,44 @@ def value_recall(y_true, flagged, amount) -> float:
     total = amount[y_true].sum()
     return float(amount[y_true & np.asarray(flagged, bool)].sum() / total) \
         if total else float("nan")
+
+
+def episode_metrics(df: pd.DataFrame, flagged) -> dict:
+    """Detection measured per attack instead of per transaction.
+
+    A fraud team cares whether an attacked card was stopped, and how much
+    was lost before it was. ``df`` needs ``fraud_episode`` (-1 for legit),
+    ``fraud_type``, ``timestamp`` and ``amount``. Returns overall and
+    per-typology detection rates, how many fraud transactions went through
+    before the first alert, and the share of fraud value lost before
+    detection (all of it, for episodes never detected).
+    """
+    d = df.assign(flagged=np.asarray(flagged, bool))
+    d = d[d["fraud_episode"] >= 0].sort_values(["fraud_episode", "timestamp"],
+                                               kind="stable")
+    if d.empty:
+        return {"episodes": 0}
+    g = d.groupby("fraud_episode", sort=False)
+    # transactions (and value) that went through before the first alert
+    before = g["flagged"].cummax().eq(False) & ~d["flagged"]
+    per = pd.DataFrame({
+        "fraud_type": g["fraud_type"].first(),
+        "detected": g["flagged"].any(),
+        "txns_before_alert": before.groupby(d["fraud_episode"]).sum(),
+        "value": g["amount"].sum(),
+        "value_before_alert": d["amount"].where(before, 0)
+        .groupby(d["fraud_episode"]).sum(),
+    })
+    hit = per[per["detected"]]
+    return {
+        "episodes": len(per),
+        "detection_rate": round(float(per["detected"].mean()), 3),
+        "detected_on_first_txn": round(float(
+            (per["detected"] & (per["txns_before_alert"] == 0)).mean()), 3),
+        "median_txns_before_alert": float(hit["txns_before_alert"].median())
+        if len(hit) else None,
+        "value_lost_before_detection": round(float(
+            per["value_before_alert"].sum() / per["value"].sum()), 3),
+        "detection_rate_by_typology": per.groupby("fraud_type")["detected"]
+        .mean().round(3).to_dict(),
+    }

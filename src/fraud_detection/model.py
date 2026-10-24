@@ -51,6 +51,7 @@ from fraud_detection.evaluation import (
     bootstrap_ci,
     choose_threshold,
     cost_curve,
+    episode_metrics,
     value_recall,
 )
 from fraud_detection.explain import describe, reason_codes, reference_row
@@ -184,6 +185,13 @@ def train_and_evaluate(data: pd.DataFrame | None = None,
     importances = sorted(zip(FEATURES, perm.importances_mean, strict=True),
                          key=lambda t: t[1], reverse=True)
     summary.update(breakdowns(test, proba, flagged))
+    summary["episodes"] = episode_metrics(test, flagged)
+    ep = summary["episodes"]
+    log.info("Attacks detected: %.1f%% of %d | median %s fraud txns before "
+             "first alert | %.1f%% of fraud value lost before detection",
+             ep["detection_rate"] * 100, ep["episodes"],
+             ep["median_txns_before_alert"],
+             ep["value_lost_before_detection"] * 100)
     summary["rules_baseline"] = compare_with_rules(test, proba)
     rb = summary["rules_baseline"]
     log.info("Rule engine: %s alerts, recall %.1f%% | model at same volume: "

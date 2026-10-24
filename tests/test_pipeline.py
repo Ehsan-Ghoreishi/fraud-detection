@@ -40,6 +40,15 @@ def test_breakdowns_cover_typologies_and_months(trained):
     assert 0 <= hidden["flagged"] <= hidden["transactions"]
 
 
+def test_episode_metrics_are_reported(trained):
+    out, _ = trained
+    ep = out["summary"]["episodes"]
+    assert ep["episodes"] == out["test"].query("fraud_episode >= 0")\
+        .fraud_episode.nunique()
+    assert 0 <= ep["detected_on_first_txn"] <= ep["detection_rate"] <= 1
+    assert 0 <= ep["value_lost_before_detection"] <= 1
+
+
 def test_rules_baseline_uses_identical_workload(trained):
     rb = trained[0]["summary"]["rules_baseline"]
     assert rb["alerts"] > 0
